@@ -1,0 +1,135 @@
+---
+# Per-PR gate: lint, test against the real libpostal models, run the C stress
+# test that proves the patched parser is thread-safe, and prove a manylinux
+# wheel builds, bundles libpostal and imports.
+#
+# The libpostal build and the 2.5 GB model download are cached, so only the
+# first run (and runs after the patch or build script change) pay for them.
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  LIBPOSTAL_PREFIX: /opt/libpostal
+jobs:
+  rust:
+    name: Rust (fmt, clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --check
+      # clippy only type-checks, so it does not need libpostal to be built
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  python:
+    name: Python (lint, tests, stress)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the patched libpostal
+        id: libpostal
+        uses: actions/cache@v4
+        with:
+          path: /opt/libpostal
+          key: libpostal-${{ runner.os }}-${{ hashFiles('patches/*.patch', 'scripts/build_libpostal.sh') }}
+      - name: Build the patched libpostal
+        if: steps.libpostal.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config
+          sudo mkdir -p /opt/libpostal && sudo chown "$USER" /opt/libpostal
+          scripts/build_libpostal.sh /opt/libpostal
+      - name: Cache the model data
+        id: data
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/polars-libpostal
+          key: libpostal-data-${{ hashFiles('python/polars_libpostal/_data.py') }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - uses: Swatinem/rust-cache@v2
+      - name: Sync (builds the extension into the venv)
+        run: uv sync
+        env:
+          LD_LIBRARY_PATH: /opt/libpostal/lib
+      - name: Download the model data
+        if: steps.data.outputs.cache-hit != 'true'
+        run: uv run python -m polars_libpostal download-data
+      - name: Lint
+        run: |
+          uv run ruff check
+          uv run ruff format --check
+      - name: Tests
+        run: uv run pytest -ra
+        env:
+          LD_LIBRARY_PATH: /opt/libpostal/lib
+      # Stock libpostal crashes this test with 4 threads; the patched one must
+      # report 0 mismatches.
+      - name: Thread-safety stress test
+        run: |
+          uv run python - <<'PY'
+          import random
+          random.seed(0)
+          streets = ["Main St", "Oak Avenue", "Rue de Rivoli", "Calle Mayor", "Hauptstrasse"]
+          with open("addresses.txt", "w") as f:
+              for n in range(1, 20001):
+                  f.write(f"{n} {random.choice(streets)}, Apt {n % 17}, City {n % 53}\n")
+          PY
+          scripts/stress.sh /opt/libpostal addresses.txt 8
+
+  wheel:
+    name: Build and smoke-test a manylinux wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist
+          manylinux: "2_28"
+          container: quay.io/pypa/manylinux_2_28_x86_64
+          before-script-linux: |
+            yum install -y autoconf automake libtool pkgconfig
+            scripts/build_libpostal.sh /opt/libpostal
+          docker-options: >-
+            -e LIBPOSTAL_PREFIX=/opt/libpostal
+            -e LD_LIBRARY_PATH=/opt/libpostal/lib
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the wheel into a clean environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+      - name: The wheel bundles libpostal and the plugin loads
+        run: |
+          unzip -l dist/*.whl | grep -E "libpostal.*\.so" || {
+            echo "libpostal was not bundled into the wheel"; exit 1; }
+          python -c "
+          import polars as pl
+          from polars_libpostal import COMPONENTS, parse_address
+          schema = pl.LazyFrame({'a': ['1 Main St']}).select(
+              parse_address('a').alias('p')).collect_schema()
+          assert list(schema['p'].to_schema()) == list(COMPONENTS), schema
+          print('ok')
+          "
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: dist/*.whl

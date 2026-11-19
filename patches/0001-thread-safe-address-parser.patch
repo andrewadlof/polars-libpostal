@@ -1,0 +1,306 @@
+diff --git a/src/address_parser.c b/src/address_parser.c
+index 5d492d2..cc04eb4 100644
+--- a/src/address_parser.c
++++ b/src/address_parser.c
+@@ -1,3 +1,5 @@
++#include <pthread.h>
++
+ #include "address_parser.h"
+ #include "address_dictionary.h"
+ #include "features.h"
+@@ -22,6 +24,37 @@
+ 
+ static address_parser_t *parser = NULL;
+ 
++// Parsing mutates scratch buffers (the address parser context, and for the
++// CRF model the CRF context and Viterbi array). Each thread gets its own set
++// so address_parser_parse can be called concurrently. The averaged perceptron
++// model keeps its scratch inside the model, so it is serialized by a mutex.
++static pthread_key_t scratch_key;
++static pthread_once_t scratch_key_once = PTHREAD_ONCE_INIT;
++static pthread_mutex_t shared_scratch_mutex = PTHREAD_MUTEX_INITIALIZER;
++
++static void scratch_key_destructor(void *value) {
++    address_parser_scratch_destroy((address_parser_scratch_t *)value);
++}
++
++static void scratch_key_create(void) {
++    pthread_key_create(&scratch_key, scratch_key_destructor);
++}
++
++static address_parser_scratch_t *get_thread_scratch(address_parser_t *self) {
++    pthread_once(&scratch_key_once, scratch_key_create);
++
++    address_parser_scratch_t *scratch = pthread_getspecific(scratch_key);
++    if (scratch != NULL && scratch->parser == self) {
++        return scratch;
++    }
++
++    // First use in this thread, or the parser was torn down and set up again
++    address_parser_scratch_destroy(scratch);
++    scratch = address_parser_scratch_new(self);
++    pthread_setspecific(scratch_key, scratch);
++    return scratch;
++}
++
+ typedef enum {
+     ADDRESS_PARSER_NULL_PHRASE,
+     ADDRESS_PARSER_DICTIONARY_PHRASE,
+@@ -1653,21 +1686,50 @@ bool address_parser_predict(address_parser_t *self, address_parser_context_t *co
+     return false;
+ }
+ 
+-libpostal_address_parser_response_t *address_parser_response_new(void) {
+-    libpostal_address_parser_response_t *response = malloc(sizeof(libpostal_address_parser_response_t));
+-    return response;
++address_parser_scratch_t *address_parser_scratch_new(address_parser_t *self) {
++    if (self == NULL) return NULL;
++
++    address_parser_scratch_t *scratch = calloc(1, sizeof(address_parser_scratch_t));
++    if (scratch == NULL) return NULL;
++    scratch->parser = self;
++
++    scratch->context = address_parser_context_new();
++    if (scratch->context == NULL) goto exit_scratch_created;
++
++    if (self->model_type == ADDRESS_PARSER_TYPE_CRF) {
++        scratch->crf = crf_scratch_new(self->model.crf);
++        if (scratch->crf == NULL) goto exit_scratch_created;
++    }
++
++    return scratch;
++
++exit_scratch_created:
++    address_parser_scratch_destroy(scratch);
++    return NULL;
+ }
+ 
+-libpostal_address_parser_response_t *address_parser_parse(char *address, char *language, char *country) {
+-    if (address == NULL) return NULL;
++void address_parser_scratch_destroy(address_parser_scratch_t *scratch) {
++    if (scratch == NULL) return;
++    if (scratch->context != NULL) address_parser_context_destroy(scratch->context);
++    if (scratch->crf != NULL) crf_scratch_destroy(scratch->crf);
++    free(scratch);
++}
+ 
+-    address_parser_t *parser = get_address_parser();
+-    if (parser == NULL || parser->context == NULL) {
+-        log_error("parser is not setup, call libpostal_setup_address_parser()\n");
+-        return NULL;
++static bool address_parser_predict_scratch(address_parser_t *self, address_parser_scratch_t *scratch, cstring_array *token_labels, tokenized_string_t *tokenized_str) {
++    address_parser_context_t *context = scratch->context;
++    if (self->model_type == ADDRESS_PARSER_TYPE_CRF) {
++        return crf_tagger_predict_scratch(self->model.crf, scratch->crf, self, context, context->features, context->prev_tag_features, token_labels, &address_parser_features, tokenized_str, self->options.print_features);
+     }
++    return address_parser_predict(self, context, token_labels, &address_parser_features, tokenized_str);
++}
+ 
+-    address_parser_context_t *context = parser->context;
++libpostal_address_parser_response_t *address_parser_response_new(void) {
++    libpostal_address_parser_response_t *response = malloc(sizeof(libpostal_address_parser_response_t));
++    return response;
++}
++
++static libpostal_address_parser_response_t *address_parser_parse_scratch(address_parser_t *parser, address_parser_scratch_t *scratch, char *address, char *language, char *country) {
++    address_parser_context_t *context = scratch->context;
+ 
+     char *normalized = address_parser_normalize_string(address);
+     bool is_normalized = normalized != NULL;
+@@ -1784,7 +1846,7 @@ libpostal_address_parser_response_t *address_parser_parse(char *address, char *l
+ 
+     char *prev_label = NULL;
+ 
+-    bool prediction_success = address_parser_predict(parser, context, token_labels, &address_parser_features, tokenized_str);
++    bool prediction_success = address_parser_predict_scratch(parser, scratch, token_labels, tokenized_str);
+ 
+     if (prediction_success) {
+         response = address_parser_response_new();
+@@ -1842,6 +1904,32 @@ libpostal_address_parser_response_t *address_parser_parse(char *address, char *l
+ 
+ 
+ 
++libpostal_address_parser_response_t *address_parser_parse(char *address, char *language, char *country) {
++    if (address == NULL) return NULL;
++
++    address_parser_t *parser = get_address_parser();
++    if (parser == NULL || parser->context == NULL) {
++        log_error("parser is not setup, call libpostal_setup_address_parser()\n");
++        return NULL;
++    }
++
++    if (parser->model_type != ADDRESS_PARSER_TYPE_CRF) {
++        // The perceptron keeps its scratch space in the model: one caller at a time
++        address_parser_scratch_t shared = { .parser = parser, .context = parser->context, .crf = NULL };
++        pthread_mutex_lock(&shared_scratch_mutex);
++        libpostal_address_parser_response_t *response = address_parser_parse_scratch(parser, &shared, address, language, country);
++        pthread_mutex_unlock(&shared_scratch_mutex);
++        return response;
++    }
++
++    address_parser_scratch_t *scratch = get_thread_scratch(parser);
++    if (scratch == NULL) {
++        log_error("could not allocate parser scratch space\n");
++        return NULL;
++    }
++    return address_parser_parse_scratch(parser, scratch, address, language, country);
++}
++
+ bool address_parser_module_setup(char *dir) {
+     if (parser == NULL) {
+         return address_parser_load(dir);
+diff --git a/src/address_parser.h b/src/address_parser.h
+index b059a24..6c34754 100644
+--- a/src/address_parser.h
++++ b/src/address_parser.h
+@@ -231,6 +231,17 @@ void address_parser_destroy(address_parser_t *self);
+ char *address_parser_normalize_string(char *str);
+ void address_parser_normalize_token(cstring_array *array, char *str, token_t token);
+ 
++// Per-thread scratch space for parsing. address_parser_parse allocates one
++// per calling thread on first use, so concurrent calls do not share buffers.
++typedef struct address_parser_scratch {
++    address_parser_t *parser;
++    address_parser_context_t *context;
++    crf_scratch_t *crf;
++} address_parser_scratch_t;
++
++address_parser_scratch_t *address_parser_scratch_new(address_parser_t *parser);
++void address_parser_scratch_destroy(address_parser_scratch_t *scratch);
++
+ bool address_parser_predict(address_parser_t *self, address_parser_context_t *context, cstring_array *token_labels, tagger_feature_function feature_function, tokenized_string_t *tokenized_str);
+ 
+ address_parser_context_t *address_parser_context_new(void);
+diff --git a/src/crf.c b/src/crf.c
+index e668209..4d28204 100644
+--- a/src/crf.c
++++ b/src/crf.c
+@@ -12,13 +12,13 @@ static inline bool crf_get_state_trans_feature_id(crf_t *self, char *feature, ui
+     return trie_get_data(self->state_trans_features, feature, feature_id);
+ }
+ 
+-bool crf_tagger_score(crf_t *self, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
+-    if (self == NULL || feature_function == NULL || tokenized == NULL ) {
++static bool crf_tagger_score_scratch(crf_t *self, crf_scratch_t *scratch, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
++    if (self == NULL || scratch == NULL || feature_function == NULL || tokenized == NULL ) {
+         return false;
+     }
+     size_t num_tokens = tokenized->tokens->n;
+ 
+-    crf_context_t *crf_context = self->context;
++    crf_context_t *crf_context = scratch->context;
+     crf_context_set_num_items(crf_context, num_tokens);
+     crf_context_reset(crf_context, CRF_CONTEXT_RESET_ALL);
+ 
+@@ -97,33 +97,65 @@ bool crf_tagger_score(crf_t *self, void *tagger, void *tagger_context, cstring_a
+     return true;
+ }
+ 
+-bool crf_tagger_score_viterbi(crf_t *self, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, double *score, bool print_features) {
+-    if (!crf_tagger_score(self, tagger, tagger_context, features, prev_tag_features, feature_function, tokenized, print_features)) {
++bool crf_tagger_score(crf_t *self, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
++    if (self == NULL) return false;
++    crf_scratch_t shared = { .context = self->context, .viterbi = self->viterbi };
++    return crf_tagger_score_scratch(self, &shared, tagger, tagger_context, features, prev_tag_features, feature_function, tokenized, print_features);
++}
++
++static bool crf_tagger_score_viterbi_scratch(crf_t *self, crf_scratch_t *scratch, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, double *score, bool print_features) {
++    if (!crf_tagger_score_scratch(self, scratch, tagger, tagger_context, features, prev_tag_features, feature_function, tokenized, print_features)) {
+         return false;
+     }
+ 
+     size_t num_tokens = tokenized->tokens->n;
+ 
+-    uint32_array_resize_fixed(self->viterbi, num_tokens);
+-    double viterbi_score = crf_context_viterbi(self->context, self->viterbi->a);
++    uint32_array_resize_fixed(scratch->viterbi, num_tokens);
++    double viterbi_score = crf_context_viterbi(scratch->context, scratch->viterbi->a);
+ 
+     *score = viterbi_score;
+ 
+     return true;
+ }
+ 
++bool crf_tagger_score_viterbi(crf_t *self, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, double *score, bool print_features) {
++    if (self == NULL) return false;
++    crf_scratch_t shared = { .context = self->context, .viterbi = self->viterbi };
++    return crf_tagger_score_viterbi_scratch(self, &shared, tagger, tagger_context, features, prev_tag_features, feature_function, tokenized, score, print_features);
++}
+ 
+-bool crf_tagger_predict(crf_t *self, void *tagger, void *context, cstring_array *features, cstring_array *prev_tag_features, cstring_array *labels, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
++crf_scratch_t *crf_scratch_new(crf_t *self) {
++    if (self == NULL) return NULL;
++    crf_scratch_t *scratch = calloc(1, sizeof(crf_scratch_t));
++    if (scratch == NULL) return NULL;
++
++    scratch->viterbi = uint32_array_new();
++    scratch->context = crf_context_new(CRF_CONTEXT_VITERBI | CRF_CONTEXT_MARGINALS, self->num_classes, CRF_CONTEXT_DEFAULT_NUM_ITEMS);
++    if (scratch->viterbi == NULL || scratch->context == NULL) {
++        crf_scratch_destroy(scratch);
++        return NULL;
++    }
++    return scratch;
++}
++
++void crf_scratch_destroy(crf_scratch_t *scratch) {
++    if (scratch == NULL) return;
++    if (scratch->viterbi != NULL) uint32_array_destroy(scratch->viterbi);
++    if (scratch->context != NULL) crf_context_destroy(scratch->context);
++    free(scratch);
++}
++
++bool crf_tagger_predict_scratch(crf_t *self, crf_scratch_t *scratch, void *tagger, void *context, cstring_array *features, cstring_array *prev_tag_features, cstring_array *labels, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
+     double score;
+ 
+-    if (labels == NULL) return false;
+-    if (!crf_tagger_score_viterbi(self, tagger, context, features, prev_tag_features, feature_function, tokenized, &score, print_features)) {
++    if (labels == NULL || scratch == NULL) return false;
++    if (!crf_tagger_score_viterbi_scratch(self, scratch, tagger, context, features, prev_tag_features, feature_function, tokenized, &score, print_features)) {
+         return false;
+     }
+ 
+-    uint32_t *viterbi = self->viterbi->a;
++    uint32_t *viterbi = scratch->viterbi->a;
+ 
+-    for (size_t i = 0; i < self->viterbi->n; i++) {
++    for (size_t i = 0; i < scratch->viterbi->n; i++) {
+         char *predicted = cstring_array_get_string(self->classes, viterbi[i]);
+         cstring_array_add_string(labels, predicted);
+     }
+@@ -131,6 +163,12 @@ bool crf_tagger_predict(crf_t *self, void *tagger, void *context, cstring_array
+     return true;
+ }
+ 
++bool crf_tagger_predict(crf_t *self, void *tagger, void *context, cstring_array *features, cstring_array *prev_tag_features, cstring_array *labels, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features) {
++    if (self == NULL) return false;
++    crf_scratch_t shared = { .context = self->context, .viterbi = self->viterbi };
++    return crf_tagger_predict_scratch(self, &shared, tagger, context, features, prev_tag_features, labels, feature_function, tokenized, print_features);
++}
++
+ 
+ bool crf_write(crf_t *self, FILE *f) {
+     if (self == NULL || f == NULL || self->weights == NULL || self->classes == NULL ||
+diff --git a/src/crf.h b/src/crf.h
+index af0dabe..9078103 100644
+--- a/src/crf.h
++++ b/src/crf.h
+@@ -35,6 +35,19 @@ typedef struct crf {
+     crf_context_t *context;
+ } crf_t;
+ 
++// Per-caller scratch space for prediction. The model itself (weights, tries)
++// is read-only while predicting, so any number of threads can predict with the
++// same crf_t as long as each uses its own crf_scratch_t.
++typedef struct crf_scratch {
++    crf_context_t *context;
++    uint32_array *viterbi;
++} crf_scratch_t;
++
++crf_scratch_t *crf_scratch_new(crf_t *self);
++void crf_scratch_destroy(crf_scratch_t *scratch);
++
++bool crf_tagger_predict_scratch(crf_t *model, crf_scratch_t *scratch, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, cstring_array *labels, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features);
++
+ bool crf_tagger_predict(crf_t *model, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, cstring_array *labels, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features);
+ 
+ bool crf_tagger_score(crf_t *self, void *tagger, void *tagger_context, cstring_array *features, cstring_array *prev_tag_features, tagger_feature_function feature_function, tokenized_string_t *tokenized, bool print_features);

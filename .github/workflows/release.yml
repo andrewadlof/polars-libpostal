@@ -1,0 +1,66 @@
+---
+# Builds the manylinux wheel (with the patched libpostal bundled in) and
+# publishes it to PyPI.
+#
+# Triggered by pushing a v* tag. `workflow_dispatch` runs the same build but
+# skips publishing, so the build can be rehearsed without burning a version
+# number: PyPI releases are immutable, so a broken wheel can only be yanked.
+#
+# Publishing uses PyPI Trusted Publishing (OIDC): there is no API token to
+# store, but the `pypi` environment must be registered as a trusted publisher
+# for this repository and workflow.
+# https://docs.pypi.org/trusted-publishers/
+#
+# Only Linux x86_64 wheels are built. There is no sdist: it could not build
+# without the patched libpostal, which only this workflow provides. The wheel
+# is abi3-py310, so one wheel covers Python 3.10 and newer. For aarch64, add a
+# runner or target and pass --disable-sse2 to libpostal's configure.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist
+          manylinux: "2_28"
+          container: quay.io/pypa/manylinux_2_28_x86_64
+          before-script-linux: |
+            yum install -y autoconf automake libtool pkgconfig
+            scripts/build_libpostal.sh /opt/libpostal
+          docker-options: >-
+            -e LIBPOSTAL_PREFIX=/opt/libpostal
+            -e LD_LIBRARY_PATH=/opt/libpostal/lib
+      - name: The wheel bundles libpostal
+        run: |
+          unzip -l dist/*.whl | grep -E "libpostal.*\.so" || {
+            echo "libpostal was not bundled into the wheel"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-x86_64
+          path: dist/*.whl
+
+  publish:
+    name: Publish to PyPI
+    needs: [linux]
+    # Only a pushed tag publishes; workflow_dispatch stops after the build.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/polars-libpostal
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1

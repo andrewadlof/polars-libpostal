@@ -1,0 +1,37 @@
+# =============================================================================
+#
+# The compiled cdylib is BOTH a Polars plugin (dlopen'd by polars via
+# `register_plugin_function`, C-ABI symbols emitted by `#[polars_expr]`) and a
+# regular Python extension module (`polars_libpostal._internal`). maturin
+# packages it as the latter and bundles libpostal.so next to it.
+# =============================================================================
+[package]
+name = "polars-libpostal"
+version = "0.1.0"
+edition = "2021"
+description = "Parallel libpostal address parsing as a Polars expression."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/andrewadlof/polars-libpostal"
+keywords = ["polars", "libpostal", "address", "geocoding", "parser"]
+categories = ["parser-implementations"]
+# A cdylib whose only consumer is the Python wheel: depend on the PyPI package.
+publish = false
+
+[lib]
+name = "_internal"
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py310 gives one wheel per platform covering Python 3.10+.
+# `extension-module` is enabled by maturin through `[tool.maturin] features`.
+pyo3 = { version = "0.29", features = ["abi3-py310"] }
+pyo3-polars = { version = "0.28", features = ["derive", "dtype-struct"] }
+polars = { version = "0.55.1", default-features = false, features = ["dtype-struct"] }
+rayon = "1"
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

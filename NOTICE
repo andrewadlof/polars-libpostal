@@ -1,0 +1,54 @@
+polars-libpostal
+Copyright 2026 Drew Adlof and polars-libpostal contributors
+
+This product is licensed under either of
+  * Apache License, Version 2.0 (LICENSE-APACHE)
+  * MIT License (LICENSE-MIT)
+at your option. Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in this work, as defined in the
+Apache-2.0 license, shall be dual licensed as above, without any additional
+terms or conditions.
+
+That dual license covers the code written for this repository. It does NOT
+cover the third-party works below, which carry their own terms.
+
+================================================================================
+1. libpostal  --  MIT License
+================================================================================
+
+Wheels of this package bundle a build of libpostal (https://github.com/openvenues/libpostal)
+with the patch in patches/0001-thread-safe-address-parser.patch applied, which
+makes its address parser safe to call from several threads. The patch is
+distributed under libpostal's own license, reproduced here:
+
+The MIT License (MIT)
+
+Copyright (c) 2015 openvenues
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+================================================================================
+2. The libpostal model data  --  downloaded, not distributed
+================================================================================
+
+The parser models (about 3 GB) are NOT part of this package. `python -m
+polars_libpostal download-data` fetches the retrained models that Senzing
+publishes (https://github.com/Senzing/libpostal-data) from their public bucket.
+Those models are derived from OpenStreetMap and other open data and carry their
+own terms. Read them before you redistribute the data or use it in a product.

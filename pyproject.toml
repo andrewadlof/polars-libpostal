@@ -1,0 +1,86 @@
+# =============================================================================
+#
+# Native Polars expression plugin (Rust) that parses street addresses with
+# libpostal on Polars' own thread pool. Needs the thread-safe libpostal patch in
+# patches/; wheels bundle a patched libpostal.so, so only the model data (about
+# 3 GB) is downloaded separately.
+# =============================================================================
+[project]
+name = "polars-libpostal"
+version = "0.1.0"
+description = "Parallel libpostal address parsing as a Polars expression."
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["polars", "plugin", "libpostal", "address", "parser", "geocoding"]
+authors = [{ name = "Drew Adlof", email = "drew.adlof@gmail.com" }]
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Typing :: Typed",
+]
+dependencies = [
+  # Tested with polars 2.1; the plugin ABI is built against polars-rs 0.55.
+  "polars>=2.1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/andrewadlof/polars-libpostal"
+Repository = "https://github.com/andrewadlof/polars-libpostal"
+Documentation = "https://github.com/andrewadlof/polars-libpostal#readme"
+Issues = "https://github.com/andrewadlof/polars-libpostal/issues"
+Changelog = "https://github.com/andrewadlof/polars-libpostal/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "python"
+module-name = "polars_libpostal._internal"
+features = ["pyo3/extension-module"]
+# The patch is shipped in the sdist so the source of the bundled library is
+# available next to the binary. (There is no sdist on PyPI: it cannot build
+# without the patched libpostal, which only the release workflow provides.)
+include = ["patches/*.patch", "scripts/build_libpostal.sh"]
+
+[dependency-groups]
+dev = [
+  "maturin>=1.7.0",
+  "pytest>=8.4.2",
+  "ruff>=0.12.12",
+  "rust-just>=1.50.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "D"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D", "E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "needs_data: needs the libpostal model data (see `python -m polars_libpostal download-data`)",
+]
