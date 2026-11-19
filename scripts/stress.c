@@ -1,7 +1,7 @@
 // Stress test for concurrent libpostal_parse_address.
 //
 //   cc -O2 stress.c -o stress -I<prefix>/include -L<prefix>/lib -lpostal -lpthread
-//   ./stress addresses.txt 8
+//   LIBPOSTAL_DATA_DIR=/path/to/libpostal ./stress addresses.txt 8
 //
 // Parses every address once on the main thread to get reference output, then
 // has N threads each parse all addresses (in different orders) and compares
@@ -80,7 +80,11 @@ int main(int argc, char **argv) {
     }
     fclose(f);
 
-    if (!libpostal_setup() || !libpostal_setup_parser()) { fprintf(stderr, "setup failed\n"); return 2; }
+    // Models come from $LIBPOSTAL_DATA_DIR when set, else libpostal's compiled-in path
+    char *data_dir = getenv("LIBPOSTAL_DATA_DIR");
+    bool loaded = data_dir ? (libpostal_setup_datadir(data_dir) && libpostal_setup_parser_datadir(data_dir))
+                           : (libpostal_setup() && libpostal_setup_parser());
+    if (!loaded) { fprintf(stderr, "setup failed\n"); return 2; }
 
     reference = malloc(n_addresses * sizeof(char *));
     double t0 = now();

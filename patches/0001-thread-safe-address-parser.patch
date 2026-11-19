@@ -1,3 +1,19 @@
+diff --git a/configure.ac b/configure.ac
+index 59a1634..0cfe8de 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -23,6 +23,11 @@ LDFLAGS="$LDFLAGS -L/usr/local/lib"
+ AC_SEARCH_LIBS([log],
+   [m],,[AC_MSG_ERROR([Could not find math library])])
+ 
++# The address parser keeps per-thread scratch space with pthread_key_*. glibc
++# before 2.34 has these in a separate libpthread, so link it where needed.
++AC_SEARCH_LIBS([pthread_key_create],
++  [pthread],,[AC_MSG_ERROR([Could not find the pthread library])])
++
+ # Checks for header files.
+ AC_HEADER_STDC
+ AC_HEADER_TIME
 diff --git a/src/address_parser.c b/src/address_parser.c
 index 5d492d2..cc04eb4 100644
 --- a/src/address_parser.c

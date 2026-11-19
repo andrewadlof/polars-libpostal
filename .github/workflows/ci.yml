@@ -92,7 +92,8 @@ jobs:
               for n in range(1, 20001):
                   f.write(f"{n} {random.choice(streets)}, Apt {n % 17}, City {n % 53}\n")
           PY
-          scripts/stress.sh /opt/libpostal addresses.txt 8
+          LIBPOSTAL_DATA_DIR="$(uv run python -m polars_libpostal data-dir)" \
+            scripts/stress.sh /opt/libpostal addresses.txt 8
 
   wheel:
     name: Build and smoke-test a manylinux wheel

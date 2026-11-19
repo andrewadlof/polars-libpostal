@@ -49,10 +49,14 @@ build-backend = "maturin"
 python-source = "python"
 module-name = "polars_libpostal._internal"
 features = ["pyo3/extension-module"]
-# The patch is shipped in the sdist so the source of the bundled library is
-# available next to the binary. (There is no sdist on PyPI: it cannot build
-# without the patched libpostal, which only the release workflow provides.)
-include = ["patches/*.patch", "scripts/build_libpostal.sh"]
+# The patch and build script are part of the sdist only, so they do not end up
+# as top-level `patches/` and `scripts/` folders in users' site-packages.
+# (There is no sdist on PyPI: it cannot build without the patched libpostal,
+# which only the release workflow provides.)
+include = [
+  { path = "patches/*.patch", format = "sdist" },
+  { path = "scripts/build_libpostal.sh", format = "sdist" },
+]
 
 [dependency-groups]
 dev = [

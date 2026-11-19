@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build and run the C stress test against a libpostal install.
 #
-#   scripts/stress.sh /opt/libpostal /path/to/addresses.txt 8
+#   LIBPOSTAL_DATA_DIR=/path/to/libpostal scripts/stress.sh /opt/libpostal addresses.txt 8
 #
 # One address per line. Every thread parses all addresses and compares them with
 # a single-threaded reference: the patched library must report 0 mismatches,
