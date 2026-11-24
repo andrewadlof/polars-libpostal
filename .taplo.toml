@@ -1,0 +1,18 @@
+# Taplo (TOML) formatter configuration.
+#
+# taplo cannot read formatter config from pyproject.toml, so it lives here.
+#
+# Array reordering is OFF globally because some arrays are order-sensitive (for example a Ruff isort `section-order` or
+# the order of maturin `include` entries). Reordering is re-enabled only for the tables that hold Python dependency
+# lists.
+
+[formatting]
+# Match rustfmt.toml (max_width = 100) so Cargo.toml and pyproject.toml keep their current layout.
+column_width = 100
+reorder_keys = false
+reorder_arrays = false
+
+[[rule]]
+keys = ["project", "project.optional-dependencies", "dependency-groups"]
+[rule.formatting]
+reorder_arrays = true

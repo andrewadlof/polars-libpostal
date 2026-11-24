@@ -41,25 +41,27 @@ scratch space, and a Rust plugin that parses rows on Polars' own Rayon pool. One
 ## Install
 
 ```bash
-pip install polars-libpostal
-python -m polars_libpostal download-data    # about 3 GB, once
+uv add polars-libpostal
+uv run python -m polars_libpostal download-data    # about 3 GB, once
 ```
+
+Without uv, `pip install polars-libpostal` works too, followed by `python -m polars_libpostal download-data`.
 
 Wheels are built for Linux x86_64 (manylinux_2_28, Python 3.11+) and bundle the patched libpostal. There is no sdist: it
 could not build without the patched library. See [Building from source](#building-from-source).
 
 The model data is looked up in this order: `$LIBPOSTAL_DATA_DIR`, an existing libpostal install at
-`/usr/local/share/libpostal`, then `~/.local/share/polars-libpostal`. `python -m polars_libpostal data-dir` prints the
+`/usr/local/share/libpostal`, then `~/.local/share/polars-libpostal`. `uv run python -m polars_libpostal data-dir` prints the
 one that will be used, and `parse_address(..., data_dir=...)` overrides it. The models load on the first call in a process.
 
 ## Speed
 
 Measured on 14 cores (WSL2) with 193,500 distinct addresses:
 
-| Parser                                      | Throughput                 |
-| ------------------------------------------- | -------------------------- |
-| libpostal through its Python binding        | about 10,000 addresses/s   |
-| `polars-libpostal` on 14 threads            | about 54,000 addresses/s   |
+| Parser                               | Throughput               |
+| ------------------------------------ | ------------------------ |
+| libpostal through its Python binding | about 10,000 addresses/s |
+| `polars-libpostal` on 14 threads     | about 54,000 addresses/s |
 
 The patched parser scales to about 4x at 4 threads and 6x at 8 threads in the C stress test, then flattens, so expect
 roughly that. The plugin parses every row, repeated ones included. If your data has many repeats, parse the distinct values
@@ -88,14 +90,15 @@ races, so treat the patch as tested but not proven.
 You need a Rust toolchain, `uv`, and the autotools to build libpostal.
 
 ```bash
-just libpostal        # patched libpostal into ./.libpostal (about 15 minutes)
-just dev              # build the extension into the venv
-just data             # download the model data
-just test
+uv sync                  # creates the venv and installs the dev tools
+uv run just libpostal    # patched libpostal into ./.libpostal (about 15 minutes)
+uv run just dev          # build the extension into the venv
+uv run just data         # download the model data
+uv run just test
 ```
 
 or by hand: `scripts/build_libpostal.sh /opt/libpostal`, then
-`LIBPOSTAL_PREFIX=/opt/libpostal LD_LIBRARY_PATH=/opt/libpostal/lib maturin develop`. Linking against stock libpostal builds
+`LIBPOSTAL_PREFIX=/opt/libpostal LD_LIBRARY_PATH=/opt/libpostal/lib uv run maturin develop --uv`. Linking against stock libpostal builds
 fine and then fails or corrupts memory under load, so always use the patched build.
 
 ## Licensing
