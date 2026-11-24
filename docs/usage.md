@@ -3,28 +3,48 @@
 ## `parse_address`
 
 ```python
-parse_address(address, *, data_dir=None) -> pl.Expr
+parse_address(address, *, labels=None, data_dir=None) -> pl.Expr
 ```
 
 `address` is a string expression or a column name. The result is a struct expression, so `.unnest()` it or pick fields with
 `.struct.field()`. It works on `LazyFrame`s and the output schema is known without parsing anything.
 
-| Field          | Content                                                          |
-| -------------- | ---------------------------------------------------------------- |
-| `house`        | Building or venue name                                           |
-| `house_number` | Number on the street                                             |
-| `road`         | Street name                                                      |
-| `unit`         | Apartment or suite                                               |
-| `level`        | Floor                                                            |
-| `po_box`       | PO box                                                           |
-| `other`        | Every other libpostal label (suburb, city, state, postcode, ...) |
+## Labels
 
-The names are available as `polars_libpostal.COMPONENTS`.
+The struct has one string field per libpostal label, in this order (also available as `polars_libpostal.LABELS`):
 
-- A label that appears twice is joined with a space.
-- Null or empty input gives nulls in every field.
+| Label                                           | Meaning                                  |
+| ----------------------------------------------- | ---------------------------------------- |
+| `house`, `category`, `near`                     | Venue or building name, type, "near ..." |
+| `house_number`, `road`                          | Number and street                        |
+| `unit`, `level`, `staircase`, `entrance`        | Apartment, floor, staircase, entrance    |
+| `po_box`                                        | PO box                                   |
+| `postcode`                                      | Postal code                              |
+| `suburb`, `city_district`, `city`               | Sub-city areas and the city              |
+| `island`                                        | Island                                   |
+| `state_district`, `state`, `country_region`     | Regions below the country                |
+| `country`, `world_region`                       | Country and continent-level region       |
+
+- A label that libpostal returns twice is joined with a space.
+- A label that is absent, and null or empty input, give null.
 - Output is lowercase, as libpostal produces it.
 - libpostal ignores the country when it parses, so there is no country argument.
+
+### Choosing labels
+
+`labels` limits the struct to the labels you name, in the order you give. An unknown or repeated label raises `ValueError`.
+
+```python
+parse_address("address", labels=["house_number", "road", "city", "postcode"])
+```
+
+To get back a single combined field, build it from the labels you want:
+
+```python
+pl.concat_str(
+    pl.col("p").struct.field("city", "state"), separator=", ", ignore_nulls=True
+)
+```
 
 ## Data helpers
 

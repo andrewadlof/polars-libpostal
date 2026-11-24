@@ -17,10 +17,6 @@ use pyo3_polars::export::polars_core::runtime::RAYON;
 use rayon::prelude::*;
 use serde::Deserialize;
 
-/// Output fields, in order. Every other libpostal label goes into "other".
-const COMPONENTS: [&str; 7] = ["house", "house_number", "road", "unit", "level", "po_box", "other"];
-const OTHER: usize = 6;
-
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct ParserOptions {
@@ -49,6 +45,9 @@ struct ParseKwargs {
     /// Directory holding `address_parser/`, `numex/`, `transliteration/` and
     /// `address_expansions/`.
     data_dir: String,
+    /// Labels to return, in output order. The Python side validates them
+    /// against libpostal's label set.
+    labels: Vec<String>,
 }
 
 static SETUP: OnceLock<Result<(), String>> = OnceLock::new();
@@ -75,9 +74,11 @@ fn setup(data_dir: &str) -> PolarsResult<()> {
     result.clone().map_err(|msg| PolarsError::ComputeError(msg.into()))
 }
 
-/// Parse one address into the seven components.
-fn parse_one(address: &str) -> [Option<String>; 7] {
-    let mut out: [Option<String>; 7] = Default::default();
+/// Parse one address into one value per requested label. Labels libpostal
+/// returns that were not requested are dropped; a label that appears more than
+/// once is joined with a space.
+fn parse_one(address: &str, labels: &[String]) -> Vec<Option<String>> {
+    let mut out: Vec<Option<String>> = vec![None; labels.len()];
     let Ok(c_address) = CString::new(address) else {
         return out;
     };
@@ -94,8 +95,10 @@ fn parse_one(address: &str) -> [Option<String>; 7] {
         }
         for i in 0..(*response).num_components {
             let label = CStr::from_ptr(*(*response).labels.add(i)).to_string_lossy();
+            let Some(slot) = labels.iter().position(|l| *l == label) else {
+                continue;
+            };
             let value = CStr::from_ptr(*(*response).components.add(i)).to_string_lossy();
-            let slot = COMPONENTS.iter().position(|c| *c == label).unwrap_or(OTHER);
             match &mut out[slot] {
                 Some(existing) => {
                     existing.push(' ');
@@ -109,28 +112,38 @@ fn parse_one(address: &str) -> [Option<String>; 7] {
     out
 }
 
-fn parsed_output(_input_fields: &[Field]) -> PolarsResult<Field> {
-    let fields =
-        COMPONENTS.iter().map(|name| Field::new((*name).into(), DataType::String)).collect();
+fn parsed_output(_input_fields: &[Field], kwargs: ParseKwargs) -> PolarsResult<Field> {
+    let fields = kwargs
+        .labels
+        .iter()
+        .map(|name| Field::new(name.as_str().into(), DataType::String))
+        .collect();
     Ok(Field::new("parsed".into(), DataType::Struct(fields)))
 }
 
-#[polars_expr(output_type_func=parsed_output)]
+#[polars_expr(output_type_func_with_kwargs=parsed_output)]
 fn parse_address(inputs: &[Series], kwargs: ParseKwargs) -> PolarsResult<Series> {
     let addresses = inputs[0].str()?;
     setup(&kwargs.data_dir)?;
 
     // Collect first so the parallel section works on plain slices
     let rows: Vec<Option<&str>> = addresses.iter().map(|a| a.filter(|s| !s.is_empty())).collect();
-    let parsed: Vec<[Option<String>; 7]> = RAYON
-        .install(|| rows.par_iter().map(|row| row.map(parse_one).unwrap_or_default()).collect());
+    let labels = &kwargs.labels;
+    let parsed: Vec<Vec<Option<String>>> = RAYON.install(|| {
+        rows.par_iter()
+            .map(|row| match row {
+                Some(address) => parse_one(address, labels),
+                None => vec![None; labels.len()],
+            })
+            .collect()
+    });
 
-    let columns: Vec<Series> = COMPONENTS
+    let columns: Vec<Series> = labels
         .iter()
         .enumerate()
         .map(|(k, name)| {
             let values: StringChunked = parsed.iter().map(|row| row[k].as_deref()).collect();
-            values.with_name((*name).into()).into_series()
+            values.with_name(name.as_str().into()).into_series()
         })
         .collect();
     StructChunked::from_series("parsed".into(), parsed.len(), columns.iter())

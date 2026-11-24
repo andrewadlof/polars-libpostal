@@ -9,7 +9,8 @@ import textwrap
 from pathlib import Path
 
 import polars as pl
-from polars_libpostal import COMPONENTS, parse_address
+import pytest
+from polars_libpostal import LABELS, parse_address
 
 
 def parse(frame: pl.DataFrame | pl.LazyFrame, column: str = "a") -> pl.DataFrame:
@@ -22,7 +23,7 @@ def test_schema_is_known_without_parsing() -> None:
         parse_address("a").alias("p")
     )
     schema = lazy.collect_schema()
-    assert schema["p"] == pl.Struct(dict.fromkeys(COMPONENTS, pl.String))
+    assert schema["p"] == pl.Struct(dict.fromkeys(LABELS, pl.String))
 
 
 def test_parses_components(model_dir: Path) -> None:
@@ -31,15 +32,44 @@ def test_parses_components(model_dir: Path) -> None:
     assert row["house_number"] == "456"
     assert row["road"] == "elm ave"
     assert row["unit"] == "apt 4b"
-    assert row["other"] == "springfield"
+    assert row["city"] == "springfield"
+    assert row["state"] is None
+
+
+def test_every_label_is_its_own_field(model_dir: Path) -> None:
+    df = parse(pl.DataFrame({"a": ["Apt 4B, 456 Elm Ave, Springfield, IL 62704, USA"]}))
+    row = df.row(0, named=True)
+    assert row["city"] == "springfield"
+    assert row["state"] == "il"
+    assert row["postcode"] == "62704"
+    assert row["country"] == "usa"
+
+
+def test_labels_selects_and_orders_fields(model_dir: Path) -> None:
+    labels = ["city", "road"]
+    lazy = pl.LazyFrame({"a": ["456 Elm Ave, Springfield"]}).with_columns(
+        parse_address("a", labels=labels).alias("p")
+    )
+    assert lazy.collect_schema()["p"] == pl.Struct(dict.fromkeys(labels, pl.String))
+    assert lazy.collect().unnest("p").row(0, named=True) == {
+        "a": "456 Elm Ave, Springfield",
+        "city": "springfield",
+        "road": "elm ave",
+    }
+
+
+@pytest.mark.parametrize("labels", [[], ["road", "road"], ["road", "street"]])
+def test_bad_labels_are_rejected(labels: list[str]) -> None:
+    with pytest.raises(ValueError, match="label"):
+        parse_address("a", labels=labels)
 
 
 def test_null_and_empty_give_null_fields(model_dir: Path) -> None:
     df = parse(
         pl.DataFrame({"a": [None, "", "10 Downing St"]}, schema={"a": pl.String})
     )
-    assert df.select(COMPONENTS).row(0) == (None,) * len(COMPONENTS)
-    assert df.select(COMPONENTS).row(1) == (None,) * len(COMPONENTS)
+    assert df.select(LABELS).row(0) == (None,) * len(LABELS)
+    assert df.select(LABELS).row(1) == (None,) * len(LABELS)
     assert df["road"][2] == "downing st"
 
 

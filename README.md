@@ -7,20 +7,25 @@ core.
 import polars as pl
 from polars_libpostal import parse_address
 
-df = pl.DataFrame({"address": ["Apt 4B, 456 Elm Ave, Springfield", None]})
-df.with_columns(parse_address("address").alias("p")).unnest("p")
+df = pl.DataFrame({"address": ["Apt 4B, 456 Elm Ave, Springfield, IL 62704", None]})
+df.with_columns(
+    parse_address("address", labels=["house_number", "road", "unit", "city", "state", "postcode"])
+    .alias("p")
+).unnest("p")
 ```
 
 ```
-house  house_number  road      unit    level  po_box  other
-null   456           elm ave   apt 4b  null   null    springfield
-null   null          null      null    null   null    null
+address                                       house_number  road     unit    city         state  postcode
+Apt 4B, 456 Elm Ave, Springfield, IL 62704    456           elm ave  apt 4b  springfield  il     62704
+null                                          null          null     null    null         null   null
 ```
 
-`parse_address` returns a struct with `house`, `house_number`, `road`, `unit`, `level`, `po_box` and `other`. Every other
-libpostal label (suburb, city, state, postcode, ...) goes into `other`, a label that appears twice is joined with a space,
-and null or empty input gives nulls. Output is lowercase, as libpostal produces it. It works on `LazyFrame`s and the
-output schema is known without parsing anything.
+`parse_address` returns a struct with one field per libpostal label: `house`, `category`, `near`, `house_number`, `road`,
+`unit`, `level`, `staircase`, `entrance`, `po_box`, `postcode`, `suburb`, `city_district`, `city`, `island`,
+`state_district`, `state`, `country_region`, `country` and `world_region`. Pass `labels=[...]` to get only some of them, in
+the order you give. A label that is absent, or null or empty input, gives null. A label that appears twice is joined with a
+space. Output is lowercase, as libpostal produces it. It works on `LazyFrame`s and the output schema is known without
+parsing anything.
 
 ## Why this exists
 

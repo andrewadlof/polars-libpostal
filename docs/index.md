@@ -12,14 +12,17 @@ uv run python -m polars_libpostal download-data    # about 3 GB, once
 import polars as pl
 from polars_libpostal import parse_address
 
-df = pl.DataFrame({"address": ["Apt 4B, 456 Elm Ave, Springfield", None]})
-df.with_columns(parse_address("address").alias("p")).unnest("p")
+df = pl.DataFrame({"address": ["Apt 4B, 456 Elm Ave, Springfield, IL 62704", None]})
+df.with_columns(
+    parse_address("address", labels=["house_number", "road", "unit", "city", "state", "postcode"])
+    .alias("p")
+).unnest("p")
 ```
 
 ```
-house  house_number  road      unit    level  po_box  other
-null   456           elm ave   apt 4b  null   null    springfield
-null   null          null      null    null   null    null
+address                                       house_number  road     unit    city         state  postcode
+Apt 4B, 456 Elm Ave, Springfield, IL 62704    456           elm ave  apt 4b  springfield  il     62704
+null                                          null          null     null    null         null   null
 ```
 
 ## Why this exists

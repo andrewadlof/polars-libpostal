@@ -10,7 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `parse_address`, a Polars expression that parses addresses with libpostal on Polars' thread pool and returns a struct of
-  `house`, `house_number`, `road`, `unit`, `level`, `po_box` and `other`.
+  one field per libpostal label (`house_number`, `road`, `unit`, `city`, `state`, `postcode`, ...). The `labels` argument
+  limits and orders the fields; `LABELS` lists them all.
 - A patch that makes libpostal's address parser thread-safe by giving each thread its own scratch space, a build script
   for it, and a C stress test.
 - `download_data` and `data_dir`, with the `python -m polars_libpostal download-data` command, to fetch the libpostal
