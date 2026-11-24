@@ -27,7 +27,6 @@ nav = [
   { "Home" = "index.md" },
   { "How it works" = "architecture.md" },
   { "Install" = "install.md" },
-  { "Releasing" = "releasing.md" },
   { "Usage" = "usage.md" },
 ]
 
