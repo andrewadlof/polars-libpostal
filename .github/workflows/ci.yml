@@ -124,10 +124,10 @@ jobs:
             echo "libpostal was not bundled into the wheel"; exit 1; }
           python -c "
           import polars as pl
-          from polars_libpostal import COMPONENTS, parse_address
+          from polars_libpostal import LABELS, parse_address
           schema = pl.LazyFrame({'a': ['1 Main St']}).select(
               parse_address('a').alias('p')).collect_schema()
-          assert list(schema['p'].to_schema()) == list(COMPONENTS), schema
+          assert list(schema['p'].to_schema()) == list(LABELS), schema
           print('ok')
           "
       - uses: actions/upload-artifact@v4

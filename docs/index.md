@@ -14,8 +14,9 @@ from polars_libpostal import parse_address
 
 df = pl.DataFrame({"address": ["Apt 4B, 456 Elm Ave, Springfield, IL 62704", None]})
 df.with_columns(
-    parse_address("address", labels=["house_number", "road", "unit", "city", "state", "postcode"])
-    .alias("p")
+    parse_address(
+        "address", labels=["house_number", "road", "unit", "city", "state", "postcode"]
+    ).alias("p")
 ).unnest("p")
 ```
 

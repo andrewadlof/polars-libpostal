@@ -51,8 +51,8 @@ pl.concat_str(
 ```python
 from polars_libpostal import data_dir, download_data
 
-data_dir()          # directory that will be used
-download_data()     # fetch the models there, returns the path
+data_dir()  # directory that will be used
+download_data()  # fetch the models there, returns the path
 ```
 
 `download_data(dest=None, *, force=False)` skips the download when the directory already holds data.
