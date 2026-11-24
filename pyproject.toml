@@ -11,10 +11,10 @@ version = "0.1.0"
 description = "Parallel libpostal address parsing as a Polars expression."
 readme = "README.md"
 requires-python = ">=3.11"
-keywords = ["polars", "plugin", "libpostal", "address", "parser", "geocoding"]
+keywords = ["address", "geocoding", "libpostal", "parser", "plugin", "polars"]
 authors = [{ name = "Drew Adlof", email = "drew.adlof@gmail.com" }]
 license = "MIT OR Apache-2.0"
-license-files = ["LICENSE-MIT", "LICENSE-APACHE", "NOTICE"]
+license-files = ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -60,11 +60,19 @@ include = [
 [dependency-groups]
 dev = [
   "maturin>=1.7.0",
+  "mdformat-gfm>=0.4.1",
+  "mdformat>=0.7.22",
+  "prek>=0.2.3",
+  "pytest-cov>=6.2.1",
   "pytest>=8.4.2",
   "ruff>=0.12.12",
   "rust-just>=1.50.0",
 ]
 docs = [
+  "mkdocs-api-autonav",
+  "mkdocs-github-admonitions-plugin",
+  "mkdocs-glightbox",
+  "mkdocstrings[python]",
   "zensical>=0.0.20",
 ]
 

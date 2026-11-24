@@ -1,0 +1,143 @@
+# Run with `just precommit` (prek). The tools come from the dev dependency group in pyproject.toml, so `uv sync` first.
+#
+# Generated lock files are left alone. clippy needs the patched libpostal built, so it runs in `just check` and CI
+# rather than here.
+exclude: ^(uv\.lock|Cargo\.lock)$
+repos:
+  - repo: builtin
+    hooks:
+      # See https://prek.j178.dev/builtin/#supported-hooks for fast built-in
+      # hooks
+
+      # Remove trailing white space
+      - id: trailing-whitespace
+        name: trailing-whitespace
+        language: system
+        types_or:
+          - bash
+          - ini
+          - json
+          - markdown
+          - pyi
+          - python
+          - rust
+          - shell
+          - toml
+          - yaml
+
+      # Check for large files
+      - id: check-added-large-files
+        name: check-added-large-files
+        language: system
+        args:
+          - --maxkb=1000
+      # Fix end of files
+      - id: end-of-file-fixer
+        name: end-of-file-fixer
+        language: system
+        types_or:
+          - bash
+          - ini
+          - json
+          - markdown
+          - pyi
+          - python
+          - rust
+          - shell
+          - toml
+          - yaml
+      # Check JSON syntax
+      - id: check-json
+        name: check-json
+        language: system
+        types:
+          - json
+      # Check TOML syntax
+      - id: check-toml
+        name: check-toml
+        language: system
+        types:
+          - toml
+      # Check YAML syntax
+      - id: check-yaml
+        name: check-yaml
+        language: system
+        types:
+          - yaml
+      # Check merge conflicts
+      - id: check-merge-conflict
+        name: check-merge-conflict
+        language: system
+        types_or:
+          - bash
+          - ini
+          - json
+          - markdown
+          - pyi
+          - python
+          - rust
+          - shell
+          - toml
+          - yaml
+      # Detect private keys
+      - id: detect-private-key
+        name: detect-private-key
+        language: system
+  - repo: local
+    hooks:
+      # Format Markdown files. Limited to the README and CHANGELOG: the pages under docs/ use Zensical syntax (`!!!`
+      # admonitions, `--8<--` includes) that mdformat would rewrite.
+      - id: mdformat
+        name: mdformat
+        entry: mdformat
+        language: system
+        files: ^(README|CHANGELOG)\.md$
+        types:
+          - markdown
+        args:
+          - --number
+          - --wrap=keep
+          - --end-of-line=lf
+
+      # Format TOML files. Formatter options (including which arrays get
+      # alphabetized) live in .taplo.toml: array reordering is off globally so
+      # order-sensitive arrays are preserved, and re-enabled only for the
+      # dependency tables. Passing --option on the CLI would override the config
+      # file globally, so no args are given here.
+      - id: taplo-format
+        name: taplo-format
+        entry: uvx taplo@0.9.3 format
+        language: system
+        types:
+          - toml
+
+      # Apply all Ruff linting rules to Python code
+      - id: ruff-check
+        name: ruff-check
+        entry: ruff check
+        language: system
+        types_or:
+          - pyi
+          - python
+        args:
+          - --config=pyproject.toml
+
+      # Apply all Ruff formatting rules to Python code
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff format
+        language: system
+        types_or:
+          - pyi
+          - python
+        args:
+          - --config=pyproject.toml
+
+      # Format Rust code (uses rustfmt.toml)
+      - id: cargo-fmt
+        name: cargo-fmt
+        entry: cargo fmt --all --
+        language: system
+        types:
+          - rust
+        pass_filenames: false

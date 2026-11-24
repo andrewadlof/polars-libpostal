@@ -35,6 +35,11 @@ test *args: dev
 data:
     uv run python -m polars_libpostal download-data
 
+# Run the Python suite with coverage (branch + term-missing report)
+[group('dev')]
+test_cov *args: dev
+    uv run pytest --cov=polars_libpostal --cov-report=term-missing --cov-branch {{args}}
+
 # Lint with ruff and auto-fix what it safely can
 [group('dev')]
 lint *args:
@@ -54,6 +59,11 @@ check: dev
     uv run ruff check
     uv run ruff format --check
     uv run pytest
+
+# Run all pre-commit hooks via prek (ruff, rustfmt, taplo, mdformat and file checks)
+[group('dev')]
+precommit *args:
+    uv run prek run --all-files --show-diff-on-failure {{args}}
 
 # ----------------------------------------------------------------------------
 # docs

@@ -17,3 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `download_data` and `data_dir`, with the `python -m polars_libpostal download-data` command, to fetch the libpostal
   model data (about 3 GB).
 - A manylinux_2_28 x86_64 wheel that bundles the patched libpostal, built by the release workflow.
+- Contributor tooling: a pull request template, pre-commit hooks (`just precommit`, run with prek) for ruff, rustfmt,
+  taplo and mdformat, and a `just test_cov` coverage recipe.
+- Docs: an API reference generated from the docstrings, a zoomable Mermaid diagram viewer, MathJax equations, click-to-zoom
+  images and GitHub-style alerts.

@@ -5,19 +5,38 @@ site_url = "https://andrewadlof.github.io/polars-libpostal/"
 repo_url = "https://github.com/andrewadlof/polars-libpostal"
 repo_name = "andrewadlof/polars-libpostal"
 copyright = "Copyright &copy; Drew Adlof"
+edit_uri = "edit/main/docs/"
+
+# Click a Mermaid diagram to zoom, pan, copy it, or save it as SVG or PNG. Applies to every ```mermaid fence.
+extra_css = ["stylesheets/mermaid-expand.css"]
+
+# LaTeX math: write $inline$ and $$display$$ equations in any page. mathjax.js configures MathJax and re-typesets after
+# each instant navigation. The MathJax library itself loads from a CDN, so the site needs internet access to render
+# equations. The arithmatex extension below wraps the math so Markdown leaves it alone.
+extra_javascript = [
+  "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-mml-chtml.js",
+  "javascripts/mathjax.js",
+  "javascripts/mermaid-expand.js",
+]
+
+# The bare "API Reference" entry is replaced by the pages that the api-autonav plugin generates (see below).
 nav = [
-  { "Home" = "index.md" },
-  { "Install" = "install.md" },
-  { "Usage" = "usage.md" },
-  { "How it works" = "architecture.md" },
+  "API Reference",
   { "Building from source" = "building.md" },
-  { "Releasing" = "releasing.md" },
   { "Changelog" = "changelog.md" },
+  { "Home" = "index.md" },
+  { "How it works" = "architecture.md" },
+  { "Install" = "install.md" },
+  { "Releasing" = "releasing.md" },
+  { "Usage" = "usage.md" },
 ]
 
 [project.theme]
 language = "en"
 features = [
+  "content.action.edit",
+  "content.action.view",
+  "content.code.annotate",
   "content.code.copy",
   "navigation.footer",
   "navigation.instant",
@@ -51,7 +70,42 @@ toc.permalink = true
 pymdownx.details = {}
 pymdownx.highlight.anchor_linenums = true
 pymdownx.inlinehilite = {}
-pymdownx.superfences = {}
+pymdownx.arithmatex.generic = true
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
 pymdownx.tabbed.alternate_style = true
 pymdownx.snippets.base_path = ["."]
 pymdownx.snippets.check_paths = true
+
+# MkDocs plugins. Each needs its package in the `docs` dependency group.
+
+# Render GitHub-style alerts (`> [!NOTE]`) as admonitions, so one Markdown source reads the same on the site and on
+# GitHub.
+[project.plugins.gh-admonitions]
+
+# Click-to-zoom on images. Mermaid diagrams are drawn in the browser, so javascripts/mermaid-expand.js handles those.
+[project.plugins.glightbox]
+
+# Generate an API reference page per module (the `reference/` section) from the package's docstrings, and add it to the
+# nav where "API Reference" is listed. Modules whose name starts with an underscore (the Rust `_internal` module) are
+# skipped.
+[project.plugins.api-autonav]
+modules = ["python/polars_libpostal"]
+
+# Renders the docstrings that api-autonav points at. They are read statically, so the package need not be installed.
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["python"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "numpy"
+show_source = false
+show_root_heading = true
+show_root_full_path = false
+show_object_full_path = false
+show_category_heading = true
+members_order = "source"
+group_by_category = true
+show_if_no_docstring = false
+inherited_members = false
+filters = ["!^_"]
