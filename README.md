@@ -58,10 +58,10 @@ one that will be used, and `parse_address(..., data_dir=...)` overrides it. The 
 
 Measured on 14 cores (WSL2) with 193,500 distinct addresses:
 
-| Parser                                      | Throughput                 |
-| ------------------------------------------- | -------------------------- |
-| libpostal through its Python binding        | about 10,000 addresses/s   |
-| `polars-libpostal` on 14 threads            | about 54,000 addresses/s   |
+| Parser                               | Throughput               |
+| ------------------------------------ | ------------------------ |
+| libpostal through its Python binding | about 10,000 addresses/s |
+| `polars-libpostal` on 14 threads     | about 54,000 addresses/s |
 
 The patched parser scales to about 4x at 4 threads and 6x at 8 threads in the C stress test, then flattens, so expect
 roughly that. The plugin parses every row, repeated ones included. If your data has many repeats, parse the distinct values
