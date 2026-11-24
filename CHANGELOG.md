@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/tsan.sh` and a ThreadSanitizer workflow that run the stress test under ThreadSanitizer: the patched libpostal
+  must report no data races, and stock libpostal, as a control, must report them.
+
 ## [0.1.0] - 2026-11-24
 
 First release.

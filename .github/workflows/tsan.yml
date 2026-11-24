@@ -2,6 +2,11 @@
 # that the libpostal patch has no data races (zero mismatches alone only shows
 # that the output is right).
 #
+# Two variants run:
+#   patched  libpostal with the patch. Must report no races.
+#   stock    libpostal without it, as a control. Must report races, otherwise a
+#            clean `patched` result would not mean anything.
+#
 # It is slow (it builds an instrumented libpostal and loads the 3 GB model under
 # instrumentation), so it runs on demand, weekly, and on pull requests that touch
 # the patch or the scripts, not on every PR.
@@ -24,22 +29,28 @@ concurrency:
   cancel-in-progress: true
 jobs:
   tsan:
-    name: Stress test under ThreadSanitizer
+    name: ThreadSanitizer (${{ matrix.variant }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [patched, stock]
+    env:
+      PREFIX: /opt/libpostal-tsan-${{ matrix.variant }}
     steps:
       - uses: actions/checkout@v4
       - name: Cache the ThreadSanitizer libpostal
         id: libpostal
         uses: actions/cache@v4
         with:
-          path: /opt/libpostal-tsan
-          key: libpostal-tsan-${{ runner.os }}-${{ hashFiles('patches/*.patch', 'scripts/build_libpostal.sh', 'scripts/tsan.sh') }}
+          path: ${{ env.PREFIX }}
+          key: libpostal-tsan-${{ matrix.variant }}-${{ runner.os }}-${{ hashFiles('patches/*.patch', 'scripts/build_libpostal.sh', 'scripts/tsan.sh') }}
       - name: Install the build tools
         run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool pkg-config
       - name: Prepare the install prefix
         if: steps.libpostal.outputs.cache-hit != 'true'
-        run: sudo mkdir -p /opt/libpostal-tsan && sudo chown "$USER" /opt/libpostal-tsan
+        run: sudo mkdir -p "$PREFIX" && sudo chown "$USER" "$PREFIX"
       - name: Cache the model data
         id: data
         uses: actions/cache@v4
@@ -68,5 +79,16 @@ jobs:
           PY
       - name: Stress test under ThreadSanitizer
         run: |
+          if [ "${{ matrix.variant }}" = stock ]; then export LIBPOSTAL_STOCK=1; fi
+          set +e
           LIBPOSTAL_DATA_DIR="$HOME/.local/share/polars-libpostal" \
-            scripts/tsan.sh /opt/libpostal-tsan addresses.txt 4
+            scripts/tsan.sh "$PREFIX" addresses.txt 4
+          code=$?
+          set -e
+          if [ "${{ matrix.variant }}" = stock ]; then
+            # The control must fail: ThreadSanitizer has to see the race.
+            [ "$code" -ne 0 ] || { echo "the control found no races in stock libpostal"; exit 1; }
+            echo "control OK: ThreadSanitizer flags stock libpostal"
+          else
+            exit "$code"
+          fi

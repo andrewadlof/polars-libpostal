@@ -73,8 +73,10 @@ and join the result back.
 single-threaded reference. On the patched library, 280,000 concurrent parses on up to 14 threads gave 0 mismatches; stock
 libpostal crashes with 4 threads. The Python suite repeats that check through the plugin (`tests/test_parse.py`).
 
-ThreadSanitizer has not been run to completion. Zero mismatches shows the output is right, not that there are no data
-races, so treat the patch as tested but not proven.
+`scripts/tsan.sh` runs the same test under ThreadSanitizer. On the patched library it reports no data races (8 threads,
+80,000 parses). On stock libpostal, as a control, it reports races in the shared parse context and then crashes, so the tool
+does see the bug the patch fixes. A workflow (`.github/workflows/tsan.yml`) repeats both runs weekly. That is strong
+evidence for the addresses and code paths tested, not a proof: ThreadSanitizer only reports races that actually happen.
 
 ## Notes
 
