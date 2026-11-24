@@ -33,8 +33,12 @@ cd "$SRC"
 # `return false;` in a function that returns a pointer (trie_search.c), which
 # GCC 14 rejects when it defaults to C23. Build as C11.
 export CFLAGS="${CFLAGS:-} -std=gnu11"
-# Pass --disable-sse2 here when building for aarch64
-./configure --prefix="$PREFIX" --datadir="$PREFIX/share" --disable-data-download
+# libpostal's SIMD code is x86 SSE2 only, so ARM builds need --disable-sse2.
+EXTRA=()
+case "$(uname -m)" in
+    aarch64|arm64) EXTRA+=(--disable-sse2) ;;
+esac
+./configure --prefix="$PREFIX" --datadir="$PREFIX/share" --disable-data-download "${EXTRA[@]}"
 make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 make install
 echo "patched libpostal installed in $PREFIX"
