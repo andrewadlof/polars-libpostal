@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-24
+
+First release.
+
 ### Added
 
 - `parse_address`, a Polars expression that parses addresses with libpostal on Polars' thread pool and returns a struct of
@@ -21,3 +25,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   taplo and mdformat, and a `just test_cov` coverage recipe.
 - Docs: an API reference generated from the docstrings, a zoomable Mermaid diagram viewer, MathJax equations, click-to-zoom
   images and GitHub-style alerts.
+
+[Unreleased]: https://github.com/andrewadlof/polars-libpostal/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/andrewadlof/polars-libpostal/releases/tag/v0.1.0
