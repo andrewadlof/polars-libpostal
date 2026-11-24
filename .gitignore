@@ -188,3 +188,6 @@ notebooks/*.parquet
 
 # The thread-safety stress test is C source, not a Cython build artifact
 !/scripts/stress.c
+
+# Zensical build output
+/site/

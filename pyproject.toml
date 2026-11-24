@@ -10,7 +10,7 @@ name = "polars-libpostal"
 version = "0.1.0"
 description = "Parallel libpostal address parsing as a Polars expression."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["polars", "plugin", "libpostal", "address", "parser", "geocoding"]
 authors = [{ name = "Drew Adlof", email = "drew.adlof@gmail.com" }]
 license = "MIT OR Apache-2.0"
@@ -21,7 +21,6 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "License :: OSI Approved :: MIT License",
   "Operating System :: POSIX :: Linux",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
@@ -37,7 +36,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/andrewadlof/polars-libpostal"
 Repository = "https://github.com/andrewadlof/polars-libpostal"
-Documentation = "https://github.com/andrewadlof/polars-libpostal#readme"
+Documentation = "https://andrewadlof.github.io/polars-libpostal/"
 Issues = "https://github.com/andrewadlof/polars-libpostal/issues"
 Changelog = "https://github.com/andrewadlof/polars-libpostal/blob/main/CHANGELOG.md"
 
@@ -65,13 +64,16 @@ dev = [
   "ruff>=0.12.12",
   "rust-just>=1.50.0",
 ]
+docs = [
+  "zensical>=0.0.20",
+]
 
 [tool.uv]
 default-groups = ["dev"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "D"]

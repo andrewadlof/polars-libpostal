@@ -56,6 +56,20 @@ check: dev
     uv run pytest
 
 # ----------------------------------------------------------------------------
+# docs
+# ----------------------------------------------------------------------------
+
+# Live-preview the docs at http://localhost:8000
+[group('docs')]
+docs-serve:
+    uv run --only-group docs zensical serve
+
+# Build the static docs site into ./site
+[group('docs')]
+docs-build:
+    uv run --only-group docs zensical build --clean
+
+# ----------------------------------------------------------------------------
 # release
 #
 # Releases are cut by CI: push a v<version> tag and .github/workflows/release.yml

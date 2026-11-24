@@ -13,7 +13,7 @@
 #
 # Only Linux x86_64 wheels are built. There is no sdist: it could not build
 # without the patched libpostal, which only this workflow provides. The wheel
-# is abi3-py310, so one wheel covers Python 3.10 and newer. For aarch64, add a
+# is abi3-py310, so one wheel covers Python 3.10 and newer (polars 2.x itself needs 3.11). For aarch64, add a
 # runner or target and pass --disable-sse2 to libpostal's configure.
 name: Release
 on:
