@@ -5,8 +5,15 @@
 #
 # Builds the patched libpostal with -fsanitize=thread into <prefix> unless it is
 # already there, builds stress.c the same way, and runs it. Every data race
-# ThreadSanitizer reports is printed, and the script exits 1 if there is one or
-# if the stress test itself reports a mismatch.
+# ThreadSanitizer reports is printed. Exit codes:
+#
+#   0  no races reported and the stress test passed
+#   1  ThreadSanitizer reported at least one race
+#   2  no races reported, but the stress test failed, crashed or timed out
+#
+# The stress run is killed after $TSAN_TIMEOUT (default 15m). Stock libpostal can
+# hang under its own race, and a hang must not hold a CI runner until the job
+# times out. Races reported before the kill still count.
 #
 # Use a different prefix from the normal build: the instrumented library is
 # several times slower and must not end up in a wheel.
@@ -20,6 +27,7 @@ set -euo pipefail
 PREFIX="${1:?usage: tsan.sh <prefix> <addresses.txt> [threads]}"
 ADDRESSES="${2:?usage: tsan.sh <prefix> <addresses.txt> [threads]}"
 THREADS="${3:-8}"
+TSAN_TIMEOUT="${TSAN_TIMEOUT:-15m}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
@@ -49,7 +57,7 @@ cc -O1 $SAN "$HERE/stress.c" -o "$OUT/stress" \
 
 status=0
 TSAN_OPTIONS="log_path=$OUT/tsan halt_on_error=0 exitcode=0 history_size=7 ${TSAN_OPTIONS:-}" \
-    norand "$OUT/stress" "$ADDRESSES" "$THREADS" || status=$?
+    norand timeout -k 30s "$TSAN_TIMEOUT" "$OUT/stress" "$ADDRESSES" "$THREADS" || status=$?
 
 races=0
 for report in "$OUT"/tsan.*; do
@@ -63,8 +71,12 @@ if [ "$races" -gt 0 ]; then
     cat "$OUT"/tsan.* | head -n 400
     exit 1
 fi
+if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+    echo "the stress test timed out after $TSAN_TIMEOUT without a ThreadSanitizer report" >&2
+    exit 2
+fi
 if [ "$status" -ne 0 ]; then
     echo "the stress test failed (exit $status) without a ThreadSanitizer report" >&2
-    exit 1
+    exit 2
 fi
 echo "ThreadSanitizer: no data races reported"

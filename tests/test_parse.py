@@ -10,6 +10,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
+from polars.testing import assert_frame_equal
 from polars_libpostal import LABELS, parse_address
 
 
@@ -121,7 +122,7 @@ def test_many_threads_match_one_thread(model_dir: Path, tmp_path: Path) -> None:
     )
     single = pl.read_parquet(dst)
 
-    assert many.equals(single)
+    assert_frame_equal(many, single)
 
 
 def test_missing_data_is_a_clear_error(tmp_path: Path) -> None:
