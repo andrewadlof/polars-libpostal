@@ -91,7 +91,9 @@ df.with_columns(parts=parse_address_list("address")).explode("parts").unnest("pa
 To look labels up by name, convert the list to Polars' `Map` type. `list.to_map()` needs the fields named `key` and `value`:
 
 ```python
-pl.col("parts").list.eval(pl.element().struct.rename_fields(["key", "value"])).list.to_map()
+pl.col("parts").list.eval(
+    pl.element().struct.rename_fields(["key", "value"])
+).list.to_map()
 ```
 
 !!! warning
