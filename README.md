@@ -52,6 +52,23 @@ Apt 4B, 456 Elm Ave, Springfield, IL 62704    springfield il 62704
 null                                          null
 ```
 
+`expand_address` returns libpostal's normalized forms of each address as a `List(String)`: abbreviations spelled out,
+numbers as digits, accents and punctuation normalized. Two addresses that share an expansion are likely the same place, so
+it is useful for matching and deduplication:
+
+```python
+from polars_libpostal import expand_address
+
+df.with_columns(expanded=expand_address("address", languages=["en"]))
+```
+
+```
+address           expanded
+30 W 26th St      ["30 w 26th saint", "30 w 26th street", "30 west 26th saint", "30 west 26th street", ...]
+```
+
+Without `languages`, libpostal's language classifier picks them for each address.
+
 ## Why this exists
 
 libpostal is a C library, but it cannot be called from several threads: its address parser reuses one parse context, one
