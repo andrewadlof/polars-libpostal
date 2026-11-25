@@ -46,6 +46,53 @@ pl.concat_str(
 )
 ```
 
+## `parse_address_list`
+
+```python
+parse_address_list(address, *, data_dir=None) -> pl.Expr
+```
+
+Returns libpostal's response as it is: a `List(Struct({"label": String, "value": String}))` with one element per component,
+in the order the components appear in the address text. Labels are the ones in the table above.
+
+- A label that libpostal returns more than once stays as separate elements, in place.
+- Null or empty input gives null.
+- It works on `LazyFrame`s and the output schema is known without parsing anything.
+
+Joining each label's values with a space gives the matching `parse_address` field, so use `parse_address` when you want
+columns and `parse_address_list` when the order of the parts matters.
+
+```python
+df.with_columns(parts=parse_address_list("address"))
+```
+
+```
+address                                     parts
+Apt 4B, 456 Elm Ave, Springfield, IL 62704  [{"unit","apt 4b"}, {"house_number","456"}, {"road","elm ave"},
+                                             {"city","springfield"}, {"state","il"}, {"postcode","62704"}]
+```
+
+Work on the parts inside each list with `list.eval`. For example, fold every label except the street-level ones into one
+column, in address order:
+
+```python
+kept = ["house", "house_number", "road", "unit", "level", "po_box"]
+label = pl.element().struct.field("label")
+value = pl.element().struct.field("value")
+parse_address_list("address").list.eval(value.filter(~label.is_in(kept))).list.join(" ")
+```
+
+Or get one row per component, to group or join on:
+
+```python
+df.with_columns(parts=parse_address_list("address")).explode("parts").unnest("parts")
+```
+
+!!! note
+
+    Polars' `Map` type (`list.to_map()`) keeps one value per key, so it would merge repeated labels. Keep the list when the
+    order or the repeats matter.
+
 ## Data helpers
 
 ```python
@@ -64,5 +111,5 @@ result back:
 
 ```python
 uniq = df.select("address").unique().with_columns(parse_address("address").alias("p"))
-df.join(uniq, on="address")
+df.join(uniq, on="address", how="left")
 ```

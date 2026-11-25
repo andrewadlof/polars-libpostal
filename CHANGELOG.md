@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `parse_address_list`, which returns libpostal's components as a `List(Struct({"label": String, "value": String}))` in
+  address order, with repeated labels kept apart (#15).
+
+### Fixed
+
+- The "repeated addresses" example in the docs used an inner join, which dropped rows with a null address.
+
 ## [0.2.0] - 2026-11-24
 
 ### Added

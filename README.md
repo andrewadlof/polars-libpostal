@@ -28,6 +28,30 @@ the order you give. A label that is absent, or null or empty input, gives null. 
 space. Output is lowercase, as libpostal produces it. It works on `LazyFrame`s and the output schema is known without
 parsing anything.
 
+`parse_address_list` keeps libpostal's own response instead: a `List(Struct({"label": String, "value": String}))` with one
+element per component, in the order the components appear in the address, and repeated labels kept apart. Use it when the
+order matters, for example to fold several labels into one column:
+
+```python
+from polars_libpostal import parse_address_list
+
+kept = ["house", "house_number", "road", "unit", "level", "po_box"]
+label = pl.element().struct.field("label")
+value = pl.element().struct.field("value")
+df.with_columns(
+    parse_address_list("address")
+    .list.eval(value.filter(~label.is_in(kept)))
+    .list.join(" ")
+    .alias("other")
+)
+```
+
+```
+address                                       other
+Apt 4B, 456 Elm Ave, Springfield, IL 62704    springfield il 62704
+null                                          null
+```
+
 ## Why this exists
 
 libpostal is a C library, but it cannot be called from several threads: its address parser reuses one parse context, one
