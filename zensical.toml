@@ -21,13 +21,13 @@ extra_javascript = [
 
 # The bare "API Reference" entry is replaced by the pages that the api-autonav plugin generates (see below).
 nav = [
-  "API Reference",
-  { "Building from source" = "building.md" },
-  { "Changelog" = "changelog.md" },
   { "Home" = "index.md" },
-  { "How it works" = "architecture.md" },
   { "Install" = "install.md" },
   { "Usage" = "usage.md" },
+  { "How it works" = "architecture.md" },
+  { "Building from source" = "building.md" },
+  { "Changelog" = "changelog.md" },
+  "API Reference",
 ]
 
 [project.theme]
