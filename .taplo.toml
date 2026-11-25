@@ -12,7 +12,9 @@ column_width = 100
 reorder_keys = false
 reorder_arrays = false
 
+# Only pyproject.toml: zensical.toml also has a [project] table, whose `nav` order is the order of the docs menu.
 [[rule]]
+include = ["pyproject.toml"]
 keys = ["project", "project.optional-dependencies", "dependency-groups"]
 [rule.formatting]
 reorder_arrays = true
