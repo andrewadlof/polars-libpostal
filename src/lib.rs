@@ -192,10 +192,7 @@ fn component_dtype() -> DataType {
 }
 
 fn list_output(_input_fields: &[Field]) -> PolarsResult<Field> {
-    Ok(Field::new(
-        "parts".into(),
-        DataType::List(Box::new(component_dtype())),
-    ))
+    Ok(Field::new("parts".into(), DataType::List(Box::new(component_dtype()))))
 }
 
 #[polars_expr(output_type_func=list_output)]
@@ -204,25 +201,14 @@ fn parse_address_list(inputs: &[Series], kwargs: ListKwargs) -> PolarsResult<Ser
     setup(&kwargs.data_dir)?;
 
     let rows: Vec<Option<&str>> = addresses.iter().map(|a| a.filter(|s| !s.is_empty())).collect();
-    let parsed: Vec<Option<Vec<(String, String)>>> = RAYON.install(|| {
-        rows.par_iter()
-            .map(|row| row.and_then(parse_components))
-            .collect()
-    });
+    let parsed: Vec<Option<Vec<(String, String)>>> =
+        RAYON.install(|| rows.par_iter().map(|row| row.and_then(parse_components)).collect());
 
     // One flat struct column of every component, then each row is a slice of it.
-    let labels: StringChunked = parsed
-        .iter()
-        .flatten()
-        .flatten()
-        .map(|(label, _)| Some(label.as_str()))
-        .collect();
-    let values: StringChunked = parsed
-        .iter()
-        .flatten()
-        .flatten()
-        .map(|(_, value)| Some(value.as_str()))
-        .collect();
+    let labels: StringChunked =
+        parsed.iter().flatten().flatten().map(|(label, _)| Some(label.as_str())).collect();
+    let values: StringChunked =
+        parsed.iter().flatten().flatten().map(|(_, value)| Some(value.as_str())).collect();
     let flat = StructChunked::from_series(
         "parts".into(),
         labels.len(),
@@ -234,7 +220,8 @@ fn parse_address_list(inputs: &[Series], kwargs: ListKwargs) -> PolarsResult<Ser
     )?
     .into_series();
 
-    let mut builder = get_list_builder(&component_dtype(), flat.len(), parsed.len(), "parts".into());
+    let mut builder =
+        get_list_builder(&component_dtype(), flat.len(), parsed.len(), "parts".into());
     let mut offset = 0i64;
     for row in &parsed {
         match row {
