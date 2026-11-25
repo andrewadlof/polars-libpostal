@@ -85,8 +85,13 @@ jobs:
           code=$?
           set -e
           if [ "${{ matrix.variant }}" = stock ]; then
-            # The control must fail: ThreadSanitizer has to see the race.
-            [ "$code" -ne 0 ] || { echo "the control found no races in stock libpostal"; exit 1; }
+            # The control must report races (exit 1). Exit 0 means ThreadSanitizer
+            # missed the race, and exit 2 means the run failed or hung without a
+            # report, so neither one shows that the tool sees the bug.
+            if [ "$code" -ne 1 ]; then
+              echo "the control did not report races in stock libpostal (exit $code)"
+              exit 1
+            fi
             echo "control OK: ThreadSanitizer flags stock libpostal"
           else
             exit "$code"
