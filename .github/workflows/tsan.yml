@@ -96,3 +96,10 @@ jobs:
           else
             exit "$code"
           fi
+      # libpostal's expansion and language classifier keep no shared mutable
+      # state, so they need no patch. This checks that on the patched build.
+      - name: Expansion stress test under ThreadSanitizer
+        if: matrix.variant == 'patched'
+        run: |
+          LIBPOSTAL_DATA_DIR="$HOME/.local/share/polars-libpostal" \
+            scripts/tsan.sh "$PREFIX" addresses.txt 4 expand

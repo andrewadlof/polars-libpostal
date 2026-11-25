@@ -102,6 +102,59 @@ pl.col("parts").list.eval(
     `city: "york"`, the map holds `{"city": "york", "state": "ny"}` and "new" is lost. Keep the list when the order or the
     repeats matter, or use `parse_address`, which joins repeated labels with a space.
 
+## `expand_address`
+
+```python
+expand_address(address, *, languages=None, data_dir=None) -> pl.Expr
+```
+
+Returns libpostal's normalized forms of each address as a `List(String)`, in libpostal's order and without repeats. These
+are the spellings libpostal considers equivalent: abbreviations spelled out (`St` gives both `street` and `saint`),
+numbers written as digits, accents, hyphens and punctuation normalized, all lowercase.
+
+```python
+df.with_columns(expanded=expand_address("address"))
+```
+
+```
+address                                      expanded
+30 W 26th St                                 ["30 w 26th saint", "30 w 26th street", "30 west 26th saint",
+                                              "30 west 26th street", "30 w 26 saint", "30 w 26 street", ...]
+Quatre-vingt-douze Ave des Champs-Élysées    ["92 avenue des champs-elysees", "92 avenue des champs elysees",
+                                              "92 avenue des champselysees"]
+```
+
+- Null or empty input gives null.
+- It works on `LazyFrame`s and the output schema is known without loading anything.
+- It does not load the parser model, so an expansion-only process uses far less memory than one that parses.
+
+### Languages
+
+By default libpostal's language classifier guesses the languages of each address, which is how the second row above is
+read as French. Pass `languages` when you know them:
+
+```python
+expand_address("address", languages=["en"])
+expand_address("address", languages=["fr", "de"])
+```
+
+Naming the languages is faster and avoids wrong guesses on short inputs, but it is taken literally: read as English,
+`rue de rivoli` also expands to `rue delaware rivoli`. Codes are libpostal's 2 or 3 letter lowercase codes (`en`, `fr`,
+`fil`, ...). An empty list, a repeat or a code of the wrong shape raises `ValueError`. With `languages` set, the language
+classifier is not loaded, so its data is not needed.
+
+### Matching on expansions
+
+Two addresses that share an expansion are likely the same place. Explode the lists and join on them:
+
+```python
+def keyed(df: pl.DataFrame) -> pl.DataFrame:
+    return df.with_columns(key=expand_address("address")).explode("key")
+
+
+matches = keyed(left).join(keyed(right), on="key").unique(["left_id", "right_id"])
+```
+
 ## Data helpers
 
 ```python

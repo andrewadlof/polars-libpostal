@@ -10,6 +10,7 @@ Parallel libpostal address parsing as a Polars expression.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ __all__ = [
     "LABELS",
     "data_dir",
     "download_data",
+    "expand_address",
     "parse_address",
     "parse_address_list",
 ]
@@ -171,5 +173,83 @@ def parse_address_list(
         function_name="parse_address_list",
         args=expr,
         kwargs={"data_dir": _folder(data_dir)},
+        is_elementwise=True,
+    )
+
+
+_LANGUAGE = re.compile(r"[a-z]{2,3}")
+
+
+def expand_address(
+    address: pl.Expr | str,
+    *,
+    languages: Sequence[str] | None = None,
+    data_dir: str | os.PathLike[str] | None = None,  # noqa: F811
+) -> pl.Expr:
+    """
+    Expand addresses into libpostal's normalized forms, in parallel.
+
+    Each address becomes the list of strings libpostal considers equivalent
+    spellings of it: abbreviations spelled out ("St" gives "street" and
+    "saint"), numbers written as digits, accents and punctuation normalized,
+    and so on. Two addresses that share an expansion are likely the same place,
+    which makes this useful for matching and deduplication.
+
+    Parameters
+    ----------
+    address : pl.Expr | str
+        String expression (or column name) holding the address text.
+    languages : Sequence[str] | None
+        Language codes to expand for, such as ``["en"]`` or ``["fr", "de"]``.
+        By default libpostal's language classifier picks them for each address.
+        Naming them is faster, avoids wrong guesses on short inputs, and does
+        not need the language classifier data.
+    data_dir : str | os.PathLike[str] | None
+        Directory with the libpostal model data, as for ``parse_address``.
+        Expansion does not load the parser model.
+
+    Returns
+    -------
+    pl.Expr
+        Expression of type ``List(String)``, in libpostal's order, without
+        repeats. Null or empty addresses give null.
+
+    Raises
+    ------
+    ValueError
+        If ``languages`` is empty, repeats a code, or holds something that is
+        not a 2 or 3 letter lowercase language code.
+
+    Examples
+    --------
+    >>> df.with_columns(
+    ...     expanded=expand_address("address", languages=["en"])
+    ... )  # doctest: +SKIP
+
+    Match two tables on any shared expansion:
+
+    >>> def keyed(df: pl.DataFrame) -> pl.DataFrame:
+    ...     return df.with_columns(key=expand_address("address")).explode("key")
+    >>> keyed(left).join(keyed(right), on="key").unique(
+    ...     ["left_id", "right_id"]
+    ... )  # doctest: +SKIP
+    """
+    chosen: list[str] = []
+    if languages is not None:
+        chosen = list(languages)
+        bad = [code for code in chosen if not _LANGUAGE.fullmatch(str(code))]
+        if bad:
+            msg = f"languages must be lowercase codes such as 'en', got {bad}"
+            raise ValueError(msg)
+        if not chosen or len(set(chosen)) != len(chosen):
+            msg = "languages must be a non-empty list without repeats, or None"
+            raise ValueError(msg)
+
+    expr = pl.col(address) if isinstance(address, str) else address
+    return register_plugin_function(
+        plugin_path=_PLUGIN_DIR,
+        function_name="expand_address",
+        args=expr,
+        kwargs={"data_dir": _folder(data_dir), "languages": chosen},
         is_elementwise=True,
     )

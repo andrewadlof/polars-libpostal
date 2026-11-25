@@ -13,10 +13,15 @@ from pathlib import Path
 # Senzing publishes the libpostal models (retrained parser, v1.2.0) here.
 DEFAULT_BASE_URL = "https://public-read-libpostal-data.s3.amazonaws.com"
 
-# Archives that make up a data directory, relative to the base URL. The
-# language classifier is only needed for libpostal's address expansion, which
-# this package does not use, but the other two are required to parse.
-ARCHIVES = ("v1.1.0/libpostal_data.tar.gz", "v1.2.0/parser.tar.gz")
+# Archives that make up a data directory, relative to the base URL, and the
+# folder each one creates. The dictionaries are needed for everything, the
+# parser model for parsing, and the language classifier for expanding addresses
+# without naming their languages.
+ARCHIVES = {
+    "v1.1.0/libpostal_data.tar.gz": "address_expansions",
+    "v1.2.0/parser.tar.gz": "address_parser",
+    "v1.1.0/language_classifier.tar.gz": "language_classifier",
+}
 
 SYSTEM_DIR = Path("/usr/local/share/libpostal")
 ENV_VAR = "LIBPOSTAL_DATA_DIR"
@@ -24,7 +29,7 @@ ENV_VAR = "LIBPOSTAL_DATA_DIR"
 
 def is_complete(path: Path) -> bool:
     """
-    Check whether a directory holds the data needed to parse addresses.
+    Check whether a directory holds all of libpostal's data.
 
     Parameters
     ----------
@@ -34,9 +39,10 @@ def is_complete(path: Path) -> bool:
     Returns
     -------
     bool
-        True when the parser model and the shared dictionaries are present.
+        True when the dictionaries, the parser model and the language
+        classifier are all present.
     """
-    return all((path / name).is_dir() for name in ("address_parser", "numex"))
+    return all((path / folder).is_dir() for folder in ARCHIVES.values())
 
 
 def user_dir() -> Path:
@@ -91,12 +97,16 @@ def download_data(
     """
     Download the libpostal model data (about 3 GB on disk).
 
+    Only the archives whose folder is missing are fetched, so running it on an
+    older install adds what is new (such as the language classifier) without
+    downloading the rest again.
+
     Parameters
     ----------
     dest : str | os.PathLike[str] | None
         Directory to install into. Defaults to ``data_dir()``.
     force : bool
-        Download again even when the directory already holds data.
+        Download every archive again, even when its folder is present.
     base_url : str
         Where the archives are served from.
 
@@ -111,8 +121,13 @@ def download_data(
         return target
 
     target.mkdir(parents=True, exist_ok=True)
+    missing = [
+        name
+        for name, folder in ARCHIVES.items()
+        if force or not (target / folder).is_dir()
+    ]
     with tempfile.TemporaryDirectory(dir=target) as tmp:
-        for name in ARCHIVES:
+        for name in missing:
             url = f"{base_url.rstrip('/')}/{name}"
             archive = Path(tmp) / Path(name).name
             print(f"downloading {url}", file=sys.stderr)

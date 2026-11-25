@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import http.server
 import io
+import shutil
 import tarfile
 import threading
 from collections.abc import Iterator
@@ -26,8 +27,15 @@ def _archive(path: Path, members: dict[str, bytes]) -> None:
 @pytest.fixture()
 def server(tmp_path: Path) -> Iterator[str]:
     root = tmp_path / "www"
-    _archive(root / "v1.1.0" / "libpostal_data.tar.gz", {"numex/en.dat": b"x"})
+    _archive(
+        root / "v1.1.0" / "libpostal_data.tar.gz",
+        {"numex/en.dat": b"x", "address_expansions/en.dat": b"x"},
+    )
     _archive(root / "v1.2.0" / "parser.tar.gz", {"address_parser/model.dat": b"y"})
+    _archive(
+        root / "v1.1.0" / "language_classifier.tar.gz",
+        {"language_classifier/model.dat": b"z"},
+    )
     handler = functools.partial(
         http.server.SimpleHTTPRequestHandler, directory=str(root)
     )
@@ -38,12 +46,26 @@ def server(tmp_path: Path) -> Iterator[str]:
     httpd.shutdown()
 
 
-def test_download_extracts_both_archives(server: str, tmp_path: Path) -> None:
+def test_download_extracts_every_archive(server: str, tmp_path: Path) -> None:
     dest = tmp_path / "data"
     assert _data.download_data(dest, base_url=server) == dest
     assert (dest / "numex" / "en.dat").read_bytes() == b"x"
     assert (dest / "address_parser" / "model.dat").read_bytes() == b"y"
+    assert (dest / "language_classifier" / "model.dat").read_bytes() == b"z"
     assert _data.is_complete(dest)
+
+
+def test_only_missing_archives_are_fetched(server: str, tmp_path: Path) -> None:
+    """An install from before the classifier was added gets just the classifier."""
+    dest = tmp_path / "data"
+    _data.download_data(dest, base_url=server)
+    shutil.rmtree(dest / "language_classifier")
+    (dest / "address_parser" / "model.dat").write_bytes(b"kept")
+    assert not _data.is_complete(dest)
+
+    _data.download_data(dest, base_url=server)
+    assert (dest / "language_classifier" / "model.dat").read_bytes() == b"z"
+    assert (dest / "address_parser" / "model.dat").read_bytes() == b"kept"
 
 
 def test_second_download_is_skipped_unless_forced(server: str, tmp_path: Path) -> None:

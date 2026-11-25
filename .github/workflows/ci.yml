@@ -115,6 +115,11 @@ jobs:
           PY
           LIBPOSTAL_DATA_DIR="$(uv run python -m polars_libpostal data-dir)" \
             scripts/stress.sh /opt/libpostal addresses.txt 8
+      # Expansion needs no patch, but the plugin runs it on many threads too.
+      - name: Thread-safety stress test (expansion)
+        run: |
+          LIBPOSTAL_DATA_DIR="$(uv run python -m polars_libpostal data-dir)" \
+            scripts/stress.sh /opt/libpostal addresses.txt 8 expand
 
   wheel:
     name: Build and smoke-test a manylinux wheel (${{ matrix.arch }})
@@ -154,10 +159,12 @@ jobs:
             echo "libpostal was not bundled into the wheel"; exit 1; }
           python -c "
           import polars as pl
-          from polars_libpostal import LABELS, parse_address
+          from polars_libpostal import LABELS, expand_address, parse_address
           schema = pl.LazyFrame({'a': ['1 Main St']}).select(
-              parse_address('a').alias('p')).collect_schema()
+              parse_address('a').alias('p'),
+              expand_address('a').alias('e')).collect_schema()
           assert list(schema['p'].to_schema()) == list(LABELS), schema
+          assert schema['e'] == pl.List(pl.String), schema
           print('ok')
           "
       - uses: actions/upload-artifact@v4
