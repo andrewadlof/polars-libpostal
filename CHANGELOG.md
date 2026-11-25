@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `expand_address`, which returns libpostal's normalized forms of each address as a `List(String)`, for matching and
+  deduplication. `languages=` names the languages; without it libpostal's language classifier picks them.
+- The language classifier (about 50 MB) is part of the model data. `download-data` now fetches only the archives that are
+  missing, so running it again on an existing install adds just the classifier.
+- An `expand` mode for the C stress test and the ThreadSanitizer script. Expansion is thread-safe without a patch: no
+  races and no mismatches on 8 threads.
+
+### Changed
+
+- Each part of the model data loads on first use: the parser model only for parsing, and the language classifier only for
+  expansion without `languages`.
+
 ## [0.3.0] - 2026-11-25
 
 ### Added

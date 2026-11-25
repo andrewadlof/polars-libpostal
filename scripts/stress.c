@@ -1,7 +1,8 @@
-// Stress test for concurrent libpostal_parse_address.
+// Stress test for concurrent libpostal_parse_address (or, with the mode
+// argument `expand`, libpostal_expand_address).
 //
 //   cc -O2 stress.c -o stress -I<prefix>/include -L<prefix>/lib -lpostal -lpthread
-//   LIBPOSTAL_DATA_DIR=/path/to/libpostal ./stress addresses.txt 8
+//   LIBPOSTAL_DATA_DIR=/path/to/libpostal ./stress addresses.txt 8 [parse|expand]
 //
 // Parses every address once on the main thread to get reference output, then
 // has N threads each parse all addresses (in different orders) and compares
@@ -42,6 +43,25 @@ static char *parse(char *address) {
     return s;
 }
 
+static char *expand(char *address) {
+    libpostal_normalize_options_t options = libpostal_get_default_options();
+    size_t n = 0;
+    char **expansions = libpostal_expand_address(address, options, &n);
+    if (expansions == NULL) return strdup("<null>");
+    size_t cap = 16;
+    for (size_t i = 0; i < n; i++) cap += strlen(expansions[i]) + 1;
+    char *out = malloc(cap);
+    out[0] = 0;
+    for (size_t i = 0; i < n; i++) {
+        strcat(out, expansions[i]);
+        strcat(out, "|");
+    }
+    libpostal_expansion_array_destroy(expansions, n);
+    return out;
+}
+
+static char *(*run)(char *) = parse;
+
 typedef struct { int id; size_t mismatches; } worker_t;
 
 static void *work(void *arg) {
@@ -49,7 +69,7 @@ static void *work(void *arg) {
     size_t stride = 7919 + 2 * w->id;  // coprime-ish with n: a different order per thread
     size_t idx = (size_t)w->id * 101 % n_addresses;
     for (size_t k = 0; k < n_addresses; k++) {
-        char *got = parse(addresses[idx]);
+        char *got = run(addresses[idx]);
         if (strcmp(got, reference[idx]) != 0) w->mismatches++;
         free(got);
         idx = (idx + stride) % n_addresses;
@@ -66,6 +86,12 @@ static double now(void) {
 int main(int argc, char **argv) {
     if (argc < 3) { fprintf(stderr, "usage: %s addresses.txt threads\n", argv[0]); return 2; }
     int n_threads = atoi(argv[2]);
+    bool expanding = argc > 3 && strcmp(argv[3], "expand") == 0;
+    if (argc > 3 && !expanding && strcmp(argv[3], "parse") != 0) {
+        fprintf(stderr, "mode must be parse or expand\n");
+        return 2;
+    }
+    if (expanding) run = expand;
 
     FILE *f = fopen(argv[1], "r");
     if (!f) { perror("open"); return 2; }
@@ -82,13 +108,17 @@ int main(int argc, char **argv) {
 
     // Models come from $LIBPOSTAL_DATA_DIR when set, else libpostal's compiled-in path
     char *data_dir = getenv("LIBPOSTAL_DATA_DIR");
-    bool loaded = data_dir ? (libpostal_setup_datadir(data_dir) && libpostal_setup_parser_datadir(data_dir))
-                           : (libpostal_setup() && libpostal_setup_parser());
+    bool loaded = data_dir ? libpostal_setup_datadir(data_dir) : libpostal_setup();
+    if (loaded && expanding) {
+        loaded = data_dir ? libpostal_setup_language_classifier_datadir(data_dir) : libpostal_setup_language_classifier();
+    } else if (loaded) {
+        loaded = data_dir ? libpostal_setup_parser_datadir(data_dir) : libpostal_setup_parser();
+    }
     if (!loaded) { fprintf(stderr, "setup failed\n"); return 2; }
 
     reference = malloc(n_addresses * sizeof(char *));
     double t0 = now();
-    for (size_t i = 0; i < n_addresses; i++) reference[i] = parse(addresses[i]);
+    for (size_t i = 0; i < n_addresses; i++) reference[i] = run(addresses[i]);
     double serial = now() - t0;
     printf("serial:  %zu addresses in %.2fs (%.0f/s)\n", n_addresses, serial, n_addresses / serial);
 

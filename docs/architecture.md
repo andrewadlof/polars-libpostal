@@ -30,7 +30,16 @@ the patched library reports a race or if the control finds none.
     ThreadSanitizer only reports races that happen during the run, so this is strong evidence for the addresses and code
     paths tested, not a proof.
 
+### Expansion
+
+`expand_address` needs no patch. libpostal's expansion and language classifier only read their loaded models (the
+dictionaries, transliteration tables and classifier weights) and allocate their working buffers per call. The stress test
+has an `expand` mode (`scripts/stress.sh ... 8 expand`, `scripts/tsan.sh ... 4 expand`). On 5,000 multilingual addresses
+with 8 threads, ThreadSanitizer reports no data races and 0 of 40,000 expansions differ from the single-threaded ones,
+on the patched library and on stock libpostal alike. CI runs the expansion stress test, and the `ThreadSanitizer` workflow
+runs it on the patched build.
+
 ## Scope
 
-Only the parser is bundled. libpostal's address expansion and language classifier are not used. Compatibility with a real
-`pypostal` install in the same process is not yet tested.
+The parser, address expansion and the language classifier are used. libpostal's near-duplicate hashing and its
+`expand_address_root` variant are not. Compatibility with a real `pypostal` install in the same process is not yet tested.

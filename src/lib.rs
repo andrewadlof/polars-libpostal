@@ -1,13 +1,15 @@
-//! Polars expression plugin that parses addresses with libpostal.
+//! Polars expression plugin that parses and expands addresses with libpostal.
 //!
-//! Rows are parsed in parallel on Polars' own Rayon pool. That is only safe
-//! with the patched libpostal in `patches/`: stock libpostal keeps one shared
-//! parse context, CRF context and Viterbi buffer, so concurrent callers
-//! corrupt each other's state.
+//! Rows are processed in parallel on Polars' own Rayon pool. For parsing that
+//! is only safe with the patched libpostal in `patches/`: stock libpostal keeps
+//! one shared parse context, CRF context and Viterbi buffer, so concurrent
+//! callers corrupt each other's state. Expansion and language classification
+//! only read their models and allocate per call, so they need no patch; the
+//! ThreadSanitizer stress test (`scripts/tsan.sh ... expand`) checks that.
 
 use std::ffi::{c_char, CStr, CString};
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
@@ -32,13 +34,51 @@ struct ParserResponse {
     labels: *mut *mut c_char,
 }
 
+/// `libpostal_normalize_options_t`. Every field is declared so the layout
+/// matches the C struct; only the language fields are set from Rust.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct NormalizeOptions {
+    languages: *mut *mut c_char,
+    num_languages: usize,
+    address_components: u16,
+    latin_ascii: bool,
+    transliterate: bool,
+    strip_accents: bool,
+    decompose: bool,
+    lowercase: bool,
+    trim_string: bool,
+    drop_parentheticals: bool,
+    replace_numeric_hyphens: bool,
+    delete_numeric_hyphens: bool,
+    split_alpha_from_numeric: bool,
+    replace_word_hyphens: bool,
+    delete_word_hyphens: bool,
+    delete_final_periods: bool,
+    delete_acronym_periods: bool,
+    drop_english_possessives: bool,
+    delete_apostrophes: bool,
+    expand_numex: bool,
+    roman_numerals: bool,
+}
+
+type Loader = unsafe extern "C" fn(datadir: *mut c_char) -> bool;
+
 extern "C" {
     fn libpostal_setup_datadir(datadir: *mut c_char) -> bool;
     fn libpostal_setup_parser_datadir(datadir: *mut c_char) -> bool;
+    fn libpostal_setup_language_classifier_datadir(datadir: *mut c_char) -> bool;
     fn libpostal_get_address_parser_default_options() -> ParserOptions;
     fn libpostal_parse_address(address: *mut c_char, options: ParserOptions)
         -> *mut ParserResponse;
     fn libpostal_address_parser_response_destroy(response: *mut ParserResponse);
+    fn libpostal_get_default_options() -> NormalizeOptions;
+    fn libpostal_expand_address(
+        input: *mut c_char,
+        options: NormalizeOptions,
+        n: *mut usize,
+    ) -> *mut *mut c_char;
+    fn libpostal_expansion_array_destroy(expansions: *mut *mut c_char, n: usize);
 }
 
 #[derive(Deserialize)]
@@ -57,28 +97,67 @@ struct ListKwargs {
     data_dir: String,
 }
 
-static SETUP: OnceLock<Result<(), String>> = OnceLock::new();
+#[derive(Deserialize)]
+struct ExpandKwargs {
+    /// Same as `ParseKwargs::data_dir`.
+    data_dir: String,
+    /// Language codes to expand for. Empty means libpostal's language
+    /// classifier picks them per address.
+    languages: Vec<String>,
+}
 
-/// Load the libpostal models once per process (about 3 GB, a few seconds).
-/// The first call's directory wins.
-fn setup(data_dir: &str) -> PolarsResult<()> {
-    let result = SETUP.get_or_init(|| {
-        if !Path::new(data_dir).join("address_parser").is_dir() {
+/// Each part of libpostal's data loads once per process, on first use. The
+/// first call's directory wins.
+static BASE: OnceLock<Result<(), String>> = OnceLock::new();
+static PARSER: OnceLock<Result<(), String>> = OnceLock::new();
+static CLASSIFIER: OnceLock<Result<(), String>> = OnceLock::new();
+/// libpostal's setup functions are not documented as safe to run at the same
+/// time, and a query can reach two of them at once from different threads.
+static LOADING: Mutex<()> = Mutex::new(());
+
+fn load(
+    cell: &OnceLock<Result<(), String>>,
+    data_dir: &str,
+    folder: &str,
+    loader: Loader,
+) -> PolarsResult<()> {
+    let result = cell.get_or_init(|| {
+        if !Path::new(data_dir).join(folder).is_dir() {
             return Err(format!(
-                "libpostal data not found in {data_dir:?}; run `python -m polars_libpostal download-data`"
+                "libpostal data not found in {data_dir:?} (no {folder}/); run `python -m polars_libpostal download-data`"
             ));
         }
         let dir = CString::new(data_dir).map_err(|e| e.to_string())?;
-        let ptr = dir.as_ptr() as *mut c_char;
-        // Safety: libpostal copies the path while loading; `dir` outlives both calls.
-        let loaded = unsafe { libpostal_setup_datadir(ptr) && libpostal_setup_parser_datadir(ptr) };
-        if loaded {
+        let _guard = LOADING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Safety: libpostal copies the path while loading; `dir` outlives the call.
+        if unsafe { loader(dir.as_ptr() as *mut c_char) } {
             Ok(())
         } else {
-            Err(format!("libpostal could not load its data from {data_dir:?}"))
+            Err(format!("libpostal could not load {folder}/ from {data_dir:?}"))
         }
     });
     result.clone().map_err(|msg| PolarsError::ComputeError(msg.into()))
+}
+
+/// Load the shared dictionaries and the parser model (about 3 GB).
+fn setup(data_dir: &str) -> PolarsResult<()> {
+    load(&BASE, data_dir, "address_expansions", libpostal_setup_datadir)?;
+    load(&PARSER, data_dir, "address_parser", libpostal_setup_parser_datadir)
+}
+
+/// Load the shared dictionaries, plus the language classifier when libpostal
+/// has to guess the language. Expansion does not need the parser model.
+fn setup_expansion(data_dir: &str, classify: bool) -> PolarsResult<()> {
+    load(&BASE, data_dir, "address_expansions", libpostal_setup_datadir)?;
+    if classify {
+        load(
+            &CLASSIFIER,
+            data_dir,
+            "language_classifier",
+            libpostal_setup_language_classifier_datadir,
+        )?;
+    }
+    Ok(())
 }
 
 /// Parse one address into its `(label, value)` components, in libpostal's
@@ -229,6 +308,67 @@ fn parse_address_list(inputs: &[Series], kwargs: ListKwargs) -> PolarsResult<Ser
                 builder.append_series(&flat.slice(offset, parts.len()))?;
                 offset += parts.len() as i64;
             },
+            None => builder.append_null(),
+        }
+    }
+    Ok(builder.finish().into_series())
+}
+
+/// Expand one address into its normalized forms, in libpostal's order.
+/// `languages` empty lets libpostal's classifier pick the languages. `None`
+/// when libpostal cannot take the input (an interior NUL) or returns nothing.
+fn expand_one(address: &str, languages: &[CString]) -> Option<Vec<String>> {
+    let c_address = CString::new(address).ok()?;
+    let mut language_ptrs: Vec<*mut c_char> =
+        languages.iter().map(|l| l.as_ptr() as *mut c_char).collect();
+    // Safety: `c_address` and the language strings outlive the call, libpostal
+    // only reads them, and the result is read before it is destroyed.
+    // Expansion keeps no shared mutable state (see the module docs).
+    unsafe {
+        let mut options = libpostal_get_default_options();
+        if !language_ptrs.is_empty() {
+            options.languages = language_ptrs.as_mut_ptr();
+            options.num_languages = language_ptrs.len();
+        }
+        let mut n = 0usize;
+        let expansions =
+            libpostal_expand_address(c_address.as_ptr() as *mut c_char, options, &mut n);
+        if expansions.is_null() {
+            return None;
+        }
+        let out = (0..n)
+            .map(|i| CStr::from_ptr(*expansions.add(i)).to_string_lossy().into_owned())
+            .collect();
+        libpostal_expansion_array_destroy(expansions, n);
+        Some(out)
+    }
+}
+
+fn expanded_output(_input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new("expansions".into(), DataType::List(Box::new(DataType::String))))
+}
+
+#[polars_expr(output_type_func=expanded_output)]
+fn expand_address(inputs: &[Series], kwargs: ExpandKwargs) -> PolarsResult<Series> {
+    let addresses = inputs[0].str()?;
+    setup_expansion(&kwargs.data_dir, kwargs.languages.is_empty())?;
+    let languages: Vec<CString> = kwargs
+        .languages
+        .iter()
+        .map(|l| CString::new(l.as_str()))
+        .collect::<Result<_, _>>()
+        .map_err(|e| PolarsError::ComputeError(e.to_string().into()))?;
+
+    let rows: Vec<Option<&str>> = addresses.iter().map(|a| a.filter(|s| !s.is_empty())).collect();
+    let expanded: Vec<Option<Vec<String>>> = RAYON.install(|| {
+        rows.par_iter().map(|row| row.and_then(|a| expand_one(a, &languages))).collect()
+    });
+
+    let values = expanded.iter().flatten().map(Vec::len).sum();
+    let mut builder = ListStringChunkedBuilder::new("expansions".into(), expanded.len(), values);
+    for row in &expanded {
+        match row {
+            Some(forms) => builder.append_values_iter(forms.iter().map(String::as_str)),
             None => builder.append_null(),
         }
     }

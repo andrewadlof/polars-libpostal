@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Run the thread-safety stress test under ThreadSanitizer.
 #
-#   LIBPOSTAL_DATA_DIR=/path/to/libpostal scripts/tsan.sh /opt/libpostal-tsan addresses.txt 8
+#   LIBPOSTAL_DATA_DIR=/path/to/libpostal scripts/tsan.sh /opt/libpostal-tsan addresses.txt 8 [parse|expand]
+#
+# The mode picks the libpostal call under test: address parsing (the default),
+# or address expansion, which also needs the language classifier data.
 #
 # Builds the patched libpostal with -fsanitize=thread into <prefix> unless it is
 # already there, builds stress.c the same way, and runs it. Every data race
@@ -24,9 +27,10 @@
 # when that works, which needs no system-wide change.
 set -euo pipefail
 
-PREFIX="${1:?usage: tsan.sh <prefix> <addresses.txt> [threads]}"
-ADDRESSES="${2:?usage: tsan.sh <prefix> <addresses.txt> [threads]}"
+PREFIX="${1:?usage: tsan.sh <prefix> <addresses.txt> [threads] [parse|expand]}"
+ADDRESSES="${2:?usage: tsan.sh <prefix> <addresses.txt> [threads] [parse|expand]}"
 THREADS="${3:-8}"
+MODE="${4:-parse}"
 TSAN_TIMEOUT="${TSAN_TIMEOUT:-15m}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$(mktemp -d)"
@@ -57,7 +61,7 @@ cc -O1 $SAN "$HERE/stress.c" -o "$OUT/stress" \
 
 status=0
 TSAN_OPTIONS="log_path=$OUT/tsan halt_on_error=0 exitcode=0 history_size=7 ${TSAN_OPTIONS:-}" \
-    norand timeout -k 30s "$TSAN_TIMEOUT" "$OUT/stress" "$ADDRESSES" "$THREADS" || status=$?
+    norand timeout -k 30s "$TSAN_TIMEOUT" "$OUT/stress" "$ADDRESSES" "$THREADS" "$MODE" || status=$?
 
 races=0
 for report in "$OUT"/tsan.*; do

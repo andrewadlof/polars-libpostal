@@ -24,8 +24,12 @@ The model data is looked up in this order:
 2. an existing libpostal install at `/usr/local/share/libpostal`
 3. `~/.local/share/polars-libpostal`
 
-`uv run python -m polars_libpostal data-dir` prints the one that will be used, and `parse_address(..., data_dir=...)`
-overrides it. The models load on the first call in a process.
+`uv run python -m polars_libpostal data-dir` prints the one that will be used, and `data_dir=...` on any expression
+overrides it. Each part loads on its first use in a process: the dictionaries, the parser model (`parse_address`,
+`parse_address_list`) and the language classifier (`expand_address` without `languages`).
+
+`download-data` fetches only the parts that are missing. If you installed the data before `expand_address` existed, run it
+again to add the language classifier (about 50 MB).
 
 ## Command line
 
