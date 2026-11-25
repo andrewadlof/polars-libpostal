@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-25
+
 ### Added
 
 - `expand_address`, which returns libpostal's normalized forms of each address as a `List(String)`, for matching and
@@ -64,7 +66,8 @@ First release.
 - Docs: an API reference generated from the docstrings, a zoomable Mermaid diagram viewer, MathJax equations, click-to-zoom
   images and GitHub-style alerts.
 
-[Unreleased]: https://github.com/andrewadlof/polars-libpostal/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/andrewadlof/polars-libpostal/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/andrewadlof/polars-libpostal/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/andrewadlof/polars-libpostal/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/andrewadlof/polars-libpostal/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andrewadlof/polars-libpostal/releases/tag/v0.1.0
