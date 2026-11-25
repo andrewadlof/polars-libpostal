@@ -88,10 +88,17 @@ Or get one row per component, to group or join on:
 df.with_columns(parts=parse_address_list("address")).explode("parts").unnest("parts")
 ```
 
-!!! note
+To look labels up by name, convert the list to Polars' `Map` type. `list.to_map()` needs the fields named `key` and `value`:
 
-    Polars' `Map` type (`list.to_map()`) keeps one value per key, so it would merge repeated labels. Keep the list when the
-    order or the repeats matter.
+```python
+pl.col("parts").list.eval(pl.element().struct.rename_fields(["key", "value"])).list.to_map()
+```
+
+!!! warning
+
+    A `Map` keeps one value per key: the last one. If libpostal splits a label, as in `city: "new"`, `state: "ny"`,
+    `city: "york"`, the map holds `{"city": "york", "state": "ny"}` and "new" is lost. Keep the list when the order or the
+    repeats matter, or use `parse_address`, which joins repeated labels with a space.
 
 ## Data helpers
 
