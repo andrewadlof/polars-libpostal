@@ -96,15 +96,23 @@ jobs:
             scripts/stress.sh /opt/libpostal addresses.txt 8
 
   wheel:
-    name: Build and smoke-test a manylinux wheel
-    runs-on: ubuntu-latest
+    name: Build and smoke-test a manylinux wheel (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: PyO3/maturin-action@v1
         with:
           args: --release --out dist
           manylinux: "2_28"
-          container: quay.io/pypa/manylinux_2_28_x86_64
+          container: quay.io/pypa/manylinux_2_28_${{ matrix.arch }}
           before-script-linux: |
             yum install -y autoconf automake libtool pkgconfig
             scripts/build_libpostal.sh /opt/libpostal
@@ -132,5 +140,5 @@ jobs:
           "
       - uses: actions/upload-artifact@v4
         with:
-          name: wheel
+          name: wheel-${{ matrix.arch }}
           path: dist/*.whl
