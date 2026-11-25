@@ -3,12 +3,16 @@
 # test that proves the patched parser is thread-safe, and prove a manylinux
 # wheel builds, bundles libpostal and imports.
 #
+# Pull requests into `development` only run the fast checks (rustfmt, clippy,
+# ruff), so formatting slips are caught on the feature PR. The slow jobs (the
+# test suite against the 3 GB model and the wheel builds, about 10 minutes) run
+# on pull requests into `main`, where the ruleset requires them, and on manual
+# runs.
+#
 # The libpostal build and the 2.5 GB model download are cached, so only the
 # first run (and runs after the patch or build script change) pay for them.
 name: CI
 on:
-  push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -35,8 +39,25 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+  lint:
+    name: Python lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      # --only-group skips building the extension, which needs libpostal.
+      - name: Ruff
+        run: |
+          uv run --only-group dev ruff check
+          uv run --only-group dev ruff format --check
+
   python:
     name: Python (lint, tests, stress)
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,6 +118,7 @@ jobs:
 
   wheel:
     name: Build and smoke-test a manylinux wheel (${{ matrix.arch }})
+    if: github.event_name != 'pull_request' || github.base_ref == 'main'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
