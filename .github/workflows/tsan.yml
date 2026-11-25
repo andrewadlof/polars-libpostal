@@ -8,13 +8,12 @@
 #            clean `patched` result would not mean anything.
 #
 # It is slow (it builds an instrumented libpostal and loads the 3 GB model under
-# instrumentation), so it runs on demand, weekly, and on pull requests that touch
-# the patch or the scripts, not on every PR.
+# instrumentation), so it runs on demand and on pull requests that touch the patch
+# or the scripts, not on every PR. Everything it depends on is pinned, so a schedule
+# would only catch runner drift. Run it by hand after bumping the libpostal commit.
 name: ThreadSanitizer
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 6 * * 1"
   pull_request:
     paths:
       - "patches/**"
