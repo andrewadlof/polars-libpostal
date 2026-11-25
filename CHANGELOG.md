@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `scripts/tsan.sh` and a ThreadSanitizer workflow that run the stress test under ThreadSanitizer: the patched libpostal
   must report no data races, and stock libpostal, as a control, must report them.
+- A manylinux_2_28 aarch64 wheel, built on GitHub's Arm runners alongside the x86_64 one in CI and the release workflow.
 
 ## [0.1.0] - 2026-11-24
 
