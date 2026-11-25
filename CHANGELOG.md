@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
 ### Added
 
 - `scripts/tsan.sh` and a ThreadSanitizer workflow that run the stress test under ThreadSanitizer: the patched libpostal
@@ -32,5 +34,6 @@ First release.
 - Docs: an API reference generated from the docstrings, a zoomable Mermaid diagram viewer, MathJax equations, click-to-zoom
   images and GitHub-style alerts.
 
-[Unreleased]: https://github.com/andrewadlof/polars-libpostal/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/andrewadlof/polars-libpostal/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/andrewadlof/polars-libpostal/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/andrewadlof/polars-libpostal/releases/tag/v0.1.0
