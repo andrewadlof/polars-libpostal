@@ -7,7 +7,7 @@
 # =============================================================================
 [project]
 name = "polars-libpostal"
-version = "0.3.0"
+version = "0.4.0"
 description = "Parallel libpostal address parsing as a Polars expression."
 readme = "README.md"
 requires-python = ">=3.11"
