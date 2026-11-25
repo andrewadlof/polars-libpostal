@@ -75,7 +75,7 @@ libpostal crashes with 4 threads. The Python suite repeats that check through th
 
 `scripts/tsan.sh` runs the same test under ThreadSanitizer. On the patched library it reports no data races (8 threads,
 80,000 parses). On stock libpostal, as a control, it reports races in the shared parse context and then crashes, so the tool
-does see the bug the patch fixes. A workflow (`.github/workflows/tsan.yml`) repeats both runs weekly. That is strong
+does see the bug the patch fixes. A workflow (`.github/workflows/tsan.yml`) repeats both runs on pull requests that touch the patch or the scripts, and on demand. That is strong
 evidence for the addresses and code paths tested, not a proof: ThreadSanitizer only reports races that actually happen.
 
 ## Notes
