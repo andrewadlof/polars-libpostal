@@ -17,7 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - The ThreadSanitizer stress run is killed after 15 minutes (`TSAN_TIMEOUT`), and the stock-libpostal control now has to
-  report races rather than just fail. It no longer runs weekly, only on demand and on changes to the patch or scripts.
+  report races rather than just fail.
 
 ### Fixed
 
