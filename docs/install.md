@@ -13,7 +13,7 @@ Or try it without adding anything:
 uv run --with polars-libpostal python -m polars_libpostal download-data
 ```
 
-Wheels are built for Linux x86_64 (manylinux_2_28, Python 3.11+) and bundle the patched libpostal. There is no sdist: it
+Wheels are built for Linux x86_64 and aarch64 (manylinux_2_28, Python 3.11+) and bundle the patched libpostal. There is no sdist: it
 could not build without the patched library. See [Building from source](building.md).
 
 ## Model data

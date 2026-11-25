@@ -18,9 +18,17 @@ which keeps it apart from any other libpostal in the same process.
 single-threaded reference. On the patched library, 280,000 concurrent parses on up to 14 threads gave 0 mismatches. The
 Python suite repeats that check through the plugin (`tests/test_parse.py`).
 
-!!! warning
-    ThreadSanitizer has not been run to completion. Zero mismatches shows the output is right, not that there are no data
-    races, so treat the patch as tested but not proven.
+### ThreadSanitizer
+
+`scripts/tsan.sh` builds libpostal and the stress test with `-fsanitize=thread` and runs it. On the patched library it
+reports no data races (8 threads, 80,000 parses). As a control, the same run on stock libpostal reports races in
+`uint32_array_clear`, `uint32_array_push` and `address_parser_context_fill`, the shared parse context the patch removes, and
+then crashes. The `ThreadSanitizer` workflow runs both variants weekly and on changes to the patch or scripts, and fails if
+the patched library reports a race or if the control finds none.
+
+!!! note
+    ThreadSanitizer only reports races that happen during the run, so this is strong evidence for the addresses and code
+    paths tested, not a proof.
 
 ## Scope
 

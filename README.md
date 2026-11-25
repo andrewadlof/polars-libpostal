@@ -47,7 +47,7 @@ uv run python -m polars_libpostal download-data    # about 3 GB, once
 
 Without uv, `pip install polars-libpostal` works too, followed by `python -m polars_libpostal download-data`.
 
-Wheels are built for Linux x86_64 (manylinux_2_28, Python 3.11+) and bundle the patched libpostal. There is no sdist: it
+Wheels are built for Linux x86_64 and aarch64 (manylinux_2_28, Python 3.11+) and bundle the patched libpostal. There is no sdist: it
 could not build without the patched library. See [Building from source](#building-from-source).
 
 The model data is looked up in this order: `$LIBPOSTAL_DATA_DIR`, an existing libpostal install at
@@ -73,8 +73,10 @@ and join the result back.
 single-threaded reference. On the patched library, 280,000 concurrent parses on up to 14 threads gave 0 mismatches; stock
 libpostal crashes with 4 threads. The Python suite repeats that check through the plugin (`tests/test_parse.py`).
 
-ThreadSanitizer has not been run to completion. Zero mismatches shows the output is right, not that there are no data
-races, so treat the patch as tested but not proven.
+`scripts/tsan.sh` runs the same test under ThreadSanitizer. On the patched library it reports no data races (8 threads,
+80,000 parses). On stock libpostal, as a control, it reports races in the shared parse context and then crashes, so the tool
+does see the bug the patch fixes. A workflow (`.github/workflows/tsan.yml`) repeats both runs weekly. That is strong
+evidence for the addresses and code paths tested, not a proof: ThreadSanitizer only reports races that actually happen.
 
 ## Notes
 
