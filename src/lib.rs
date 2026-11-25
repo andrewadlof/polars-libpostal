@@ -9,6 +9,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::path::Path;
 use std::sync::OnceLock;
 
+use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::types::PyModule;
 use pyo3::{pymodule, Bound, PyResult, Python};
@@ -50,6 +51,12 @@ struct ParseKwargs {
     labels: Vec<String>,
 }
 
+#[derive(Deserialize)]
+struct ListKwargs {
+    /// Same as `ParseKwargs::data_dir`.
+    data_dir: String,
+}
+
 static SETUP: OnceLock<Result<(), String>> = OnceLock::new();
 
 /// Load the libpostal models once per process (about 3 GB, a few seconds).
@@ -72,6 +79,33 @@ fn setup(data_dir: &str) -> PolarsResult<()> {
         }
     });
     result.clone().map_err(|msg| PolarsError::ComputeError(msg.into()))
+}
+
+/// Parse one address into its `(label, value)` components, in libpostal's
+/// response order, which is the order of the address text. Repeated labels
+/// are kept as separate components. `None` when libpostal cannot take the
+/// input (an interior NUL) or returns no response.
+fn parse_components(address: &str) -> Option<Vec<(String, String)>> {
+    let c_address = CString::new(address).ok()?;
+    // Safety: as in `parse_one`.
+    unsafe {
+        let response = libpostal_parse_address(
+            c_address.as_ptr() as *mut c_char,
+            libpostal_get_address_parser_default_options(),
+        );
+        if response.is_null() {
+            return None;
+        }
+        let n = (*response).num_components;
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let label = CStr::from_ptr(*(*response).labels.add(i)).to_string_lossy();
+            let value = CStr::from_ptr(*(*response).components.add(i)).to_string_lossy();
+            out.push((label.into_owned(), value.into_owned()));
+        }
+        libpostal_address_parser_response_destroy(response);
+        Some(out)
+    }
 }
 
 /// Parse one address into one value per requested label. Labels libpostal
@@ -148,6 +182,57 @@ fn parse_address(inputs: &[Series], kwargs: ParseKwargs) -> PolarsResult<Series>
         .collect();
     StructChunked::from_series("parsed".into(), parsed.len(), columns.iter())
         .map(|s| s.into_series())
+}
+
+fn component_dtype() -> DataType {
+    DataType::Struct(vec![
+        Field::new("label".into(), DataType::String),
+        Field::new("value".into(), DataType::String),
+    ])
+}
+
+fn list_output(_input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new("parts".into(), DataType::List(Box::new(component_dtype()))))
+}
+
+#[polars_expr(output_type_func=list_output)]
+fn parse_address_list(inputs: &[Series], kwargs: ListKwargs) -> PolarsResult<Series> {
+    let addresses = inputs[0].str()?;
+    setup(&kwargs.data_dir)?;
+
+    let rows: Vec<Option<&str>> = addresses.iter().map(|a| a.filter(|s| !s.is_empty())).collect();
+    let parsed: Vec<Option<Vec<(String, String)>>> =
+        RAYON.install(|| rows.par_iter().map(|row| row.and_then(parse_components)).collect());
+
+    // One flat struct column of every component, then each row is a slice of it.
+    let labels: StringChunked =
+        parsed.iter().flatten().flatten().map(|(label, _)| Some(label.as_str())).collect();
+    let values: StringChunked =
+        parsed.iter().flatten().flatten().map(|(_, value)| Some(value.as_str())).collect();
+    let flat = StructChunked::from_series(
+        "parts".into(),
+        labels.len(),
+        [
+            labels.with_name("label".into()).into_series(),
+            values.with_name("value".into()).into_series(),
+        ]
+        .iter(),
+    )?
+    .into_series();
+
+    let mut builder =
+        get_list_builder(&component_dtype(), flat.len(), parsed.len(), "parts".into());
+    let mut offset = 0i64;
+    for row in &parsed {
+        match row {
+            Some(parts) => {
+                builder.append_series(&flat.slice(offset, parts.len()))?;
+                offset += parts.len() as i64;
+            },
+            None => builder.append_null(),
+        }
+    }
+    Ok(builder.finish().into_series())
 }
 
 #[pymodule]
